@@ -64,22 +64,11 @@ const ChampionsRadar = (() => {
 
     const body = node("div", "sim-radar-body");
     const commentary = ChampionsCommentary.create({ node, controlIcon });
-    const sidebars = node("div", "sim-radar-sidebars");
     const board = node("div", "sim-radar-board");
     board.setAttribute("aria-hidden", "true");
     const boardStatus = node("p", "sim-muted", layout ? "Loading radar…" : "Radar unavailable for this map.");
     boardStatus.setAttribute("role", "status");
     if (layout) boardStatus.prepend(node("span", "sim-spinner"), document.createTextNode(" "));
-    const asides = node("div", "sim-radar-detail");
-    const plan = node("strong");
-    const stage = node("strong", "sim-radar-stage");
-    const narrative = node("p");
-    const contact = node("p", "sim-muted");
-    const alive = node("p", "sim-radar-alive");
-    const feed = node("ol", "sim-radar-feed");
-    feed.setAttribute("aria-label", "Eliminations this round");
-    asides.append(plan, stage, alive, narrative, contact, feed);
-    sidebars.append(asides, commentary.panel);
     const radar = node("img", "sim-radar-image");
     radar.alt = "";
     radar.style.transform = `rotate(${rotation * 90}deg)`;
@@ -119,11 +108,11 @@ const ChampionsRadar = (() => {
         board.append(badge);
       }
       board.append(utility, ...markers.flat(), spike);
-      body.append(board, sidebars);
+      body.append(board);
     } else {
-      asides.prepend(boardStatus);
-      body.append(sidebars);
+      body.append(boardStatus);
     }
+    body.append(commentary.panel);
 
     const tools = node("div", "sim-radar-controls");
     const timeline = node("input", "sim-radar-timeline");
@@ -143,7 +132,6 @@ const ChampionsRadar = (() => {
     let animation;
     let paths = [];
     let throws = [];
-    let phaseKills = [];
     let phaseShots = [];
     let roundState;
     let earlierCalls = [];
@@ -222,9 +210,6 @@ const ChampionsRadar = (() => {
       const scores = finished ? round.score : round.before;
       score.textContent = order.map((side) => scores[side]).join("–");
       roundLabel.textContent = `Round ${round.number} / ${map.timeline.length}`;
-      plan.textContent = phase === 0 ? "Buy phase" : round.strategy;
-      stage.textContent = finished ? `${teams[round.winner].name} wins the round` : ChampionsTactics.phases[phase];
-      narrative.textContent = round.notes[phase];
       timeline.value = String(frame);
       timeline.setAttribute("aria-valuetext", `Round ${round.number}, ${ChampionsTactics.phases[phase]}`);
       for (const side of order) {
@@ -238,10 +223,6 @@ const ChampionsRadar = (() => {
       const simulation = planner?.ready ? playbackRound(round.number) : null;
       phaseShots = (simulation?.shots || []).filter((shot) => shot.phase === phase);
       const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
-      phaseKills = visibleKills.map((kill) => ({
-        side: kill.side, at: kill.phase < phase ? 0 : kill.time,
-        entry: node("li", `sim-radar-kill-${order.indexOf(kill.side)}`, kill.text),
-      }));
       utility.replaceChildren();
       if (!simulation) {
         prepareCalls(round, phase);
@@ -250,15 +231,6 @@ const ChampionsRadar = (() => {
       }
       roundState = { phase, round: { ...round, planted: simulation.planted } };
       prepareCalls(round, phase, simulation);
-      contact.textContent = simulation.stopped[phase] && phase > 0 && phase < 4
-        ? "Players hold at contested angles until they find cover or an opening." : "";
-      if (finished && ["hold", "stop", "wipe", "clutch", "defuse"].includes(round.finish)) {
-        narrative.textContent = `${teams[round.winner].name} take round ${round.number}.`;
-      } else if (phase === 3 && round.finish === "clutch" && simulation.planted) {
-        narrative.textContent = `The spike is down on ${round.site}. The defenders look for a retake.`;
-      } else if (phase === 3 && round.planted && !simulation.planted) {
-        narrative.textContent = "The hit stalls before the Spike can go down.";
-      }
       const lane = ChampionsTactics.lanesFor(map.name, round.site);
       const roundEvents = simulation.events;
       const events = roundEvents.filter((event) => event.phase === phase);
@@ -304,17 +276,6 @@ const ChampionsRadar = (() => {
       place(animate && !reducedMotion ? 0 : 1);
     }
 
-    function showEliminations(progress) {
-      const happened = phaseKills.filter(({ at }) => at <= progress);
-      const visible = happened.slice(-4).reverse().map(({ entry }) => entry);
-      if (visible.length !== feed.children.length || visible[0] !== feed.firstElementChild) {
-        feed.replaceChildren(...visible);
-      }
-      const remaining = order.map((side) => 5 - happened.filter((kill) => kill.side !== side).length);
-      const count = `${remaining.join(" vs ")} alive`;
-      if (alive.textContent !== count) alive.textContent = count;
-    }
-
     function showClock(progress) {
       const { round, phase } = roundState;
       const duration = ChampionsTactics.phaseDuration(round, phase);
@@ -329,7 +290,6 @@ const ChampionsRadar = (() => {
 
     function place(progress) {
       showClock(progress);
-      showEliminations(progress);
       showCommentary(progress);
       if (!planner?.ready) return;
       context.clearRect(0, 0, 400, 400);

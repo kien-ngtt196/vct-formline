@@ -284,8 +284,9 @@ body:has(.sim-page:not([hidden])) {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  width: min(100%, 490px);
+  width: min(100%, 720px);
   aspect-ratio: 1;
+  align-self: start;
   justify-self: center;
   background-color: #17140f;
   background-image: linear-gradient(#9e7d4630 1px, transparent 1px), linear-gradient(90deg, #9e7d4630 1px, transparent 1px);
@@ -345,9 +346,6 @@ body:has(.sim-page:not([hidden])) {
   object-fit: contain;
   filter: drop-shadow(0 1px 3px #000);
 }
-.sim-radar-feed { margin: 2px 0 0; padding: 0; display: grid; gap: 4px; list-style: none; }
-.sim-radar-feed li { padding-left: 6px; border-left: 2px solid var(--radar-left); overflow-wrap: anywhere; }
-.sim-radar-feed .sim-radar-kill-1 { border-color: var(--radar-right); }
 .sim-radar-spike {
   display: grid;
   place-items: center;
@@ -368,11 +366,9 @@ body:has(.sim-page:not([hidden])) {
   to { box-shadow: 0 0 16px #ffcd6caa; }
 }
 .sim-radar [hidden] { display: none; }
-.sim-radar-detail { display: grid; align-content: start; gap: 5px; min-height: 162px; font-size: .83rem; }
-.sim-radar-sidebars { display: grid; align-content: start; gap: 12px; min-width: 0; }
-.sim-radar-sidebars > * { min-width: 0; }
 .sim-radar-commentary {
   align-self: start;
+  min-width: 0;
   padding: 10px;
   border: 1px solid var(--radar-border);
   border-radius: 6px;
@@ -403,10 +399,6 @@ body:has(.sim-page:not([hidden])) {
 .sim-commentary-log small { display: block; color: #c7a763; font-weight: 700; }
 .sim-commentary-log .is-analysis small { color: #c9ad88; }
 .sim-commentary-log p { margin: 1px 0 0; }
-.sim-radar-detail > strong:first-child { font-size: 1rem; }
-.sim-radar-detail p { margin: 0; }
-.sim-radar-stage { color: #ffda91; }
-.sim-radar-alive { color: #a8c5cb; font-variant-numeric: tabular-nums; }
 .sim-radar-controls { margin-bottom: 12px; }
 .sim-radar-controls select { width: auto; padding: 5px; }
 .sim-radar-timeline { flex: 1 1 95px; min-width: 0; accent-color: var(--sim-gold, #efd08e); }
@@ -422,11 +414,8 @@ body:has(.sim-page:not([hidden])) {
 .sim-radar-dialog > button { margin-bottom: 8px; }
 .sim-radar-dialog::backdrop { background: #050709cf; }
 .sim-match-playback, .sim-radar-dialog { container-type: inline-size; }
-@container (min-width: 490px) {
-  .sim-radar-sidebars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@container (min-width: 830px) {
-  .sim-radar-body:has(.sim-radar-board) { grid-template-columns: minmax(0, 1fr) minmax(370px, 1fr); }
+@container (min-width: 680px) {
+  .sim-radar-body:has(.sim-radar-board) { grid-template-columns: minmax(0, 1fr) clamp(210px, 26%, 290px); }
 }
 .sim-agent-icons { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
 .sim-agent-icons .agent-portrait { width: clamp(17px, 2.5vw, 33px); height: auto; aspect-ratio: 1; object-fit: contain; }
