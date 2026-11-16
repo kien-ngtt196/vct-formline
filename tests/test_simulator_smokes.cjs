@@ -90,8 +90,7 @@ const brim = simulation('brimstone').filter((e) => e.side === 0 && e.name === 'S
 assert.ok(brim.length <= 3, 'Brimstone respects his charge limit');
 console.log(`Passed ${checked} smoke aperture checks, scenario checks, and seven-map utility smoke tests.`);
 
-// Playback must wait for a visible encounter, even when the result model has
-// already scheduled a kill. Check map geometry and vision-blocking utility.
+// Combat follows the replay sightline, even with no scheduled result-model kills.
 const { openTerrain, shotIsClear } = movement;
 const blocked = { ...openTerrain, clear: () => false };
 const smokeScreen = { shape: 'circle', center: [10, 0], radius: 2 };
@@ -104,8 +103,8 @@ for (const screen of [smokeScreen, wallScreen]) {
 }
 const planned = { phase: 1, time: .66, side: 0, killer: 0, victim: 0 };
 const round = { plan: 'Rush', kills: [planned] };
-const fight = simulateRound('omen', 'Lotus', openTerrain, round);
-assert.equal(fight.kills.length, 1, 'a nearby opponent can still be eliminated');
+const fight = simulateRound('omen', 'Lotus', openTerrain, { ...round, kills: [] });
+assert.ok(fight.kills.length > 0, 'a clear encounter starts a fight without a scheduled kill');
 const [kill] = fight.kills;
 assert.ok(shotIsClear(openTerrain, kill.origin, kill.impact, [], 35 * geometry.scaleFor('Lotus')));
 const track = fight.tracks[kill.phase][1 - kill.side][kill.victim];
@@ -114,3 +113,23 @@ assert.deepEqual(movement.playback(track, 1).point, kill.impact, 'victim stops a
 assert.equal(simulateRound('omen', 'Lotus', blocked, round).kills.length, 0,
   'a scheduled kill does not enter the feed without sight');
 assert.equal(planned.time, .66, 'planning a replay leaves the original result intact');
+
+const positions = { 79: [40, 70], 16: [46, 70] };
+const staticTerrain = { ...openTerrain, navigate: (point) => [positions[point[1]] || point] };
+const roles = [0, 1].map(() => ({ lead: 0, support: 1, lurk: 4, split: [2, 3] }));
+const sight = [];
+const replay = movement.create('Lotus', { ...base, attack: 0, kills: [] }, roles, staticTerrain,
+  (point) => point, (phase, time, positions, canShoot) => {
+    if (phase === 1) sight.push([canShoot(0, 0, 0), canShoot(1, 0, 0)]);
+  });
+const flash = { side: 0, phase: 1, time: 0, kind: 'flash', name: 'Leer', delivery: 'cast',
+  origin: [40, 70], landing: [46, 70] };
+replay.moveTo(1, 1, [flash]);
+assert.deepEqual(sight[0], [true, false], 'a flashed defender cannot shoot or stop an unblinded opponent from firing');
+assert.deepEqual(sight.at(-1), [true, true], 'visibility returns after the flash expires');
+assert.ok(movement.sightCone(staticTerrain, 'Lotus', replay.frames[1][1][0], replay.vision[1], 1, 0, .03).blind);
+assert.ok(!movement.sightCone(staticTerrain, 'Lotus', replay.frames[1][1][0], replay.vision[1], 1, 0, 1).blind);
+const wallTerrain = { ...staticTerrain, contains: ([x]) => x < 44 };
+const cone = movement.sightCone(wallTerrain, 'Lotus', replay.frames[1][0][0], replay.vision[1], 0, 0, 1);
+assert.ok(cone.rays.some(([x]) => x > 40), 'the view cone extends in the player’s facing direction');
+assert.ok(cone.rays.every(([x]) => x < 44), 'the view cone stops at a wall');

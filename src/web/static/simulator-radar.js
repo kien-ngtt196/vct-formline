@@ -146,6 +146,7 @@ const ChampionsRadar = (() => {
     let paths = [];
     let throws = [];
     let phaseKills = [];
+    let phaseShots = [];
     let roundState;
     let earlierCalls = [];
     let phaseCalls = [];
@@ -237,6 +238,7 @@ const ChampionsRadar = (() => {
         loadout.textContent = `${gun} (${carried ? "carried" : weaponCost}) · ${shield === "none" ? "no armor" : `${shield} armor (${armorCost})`} · ≈${reserve} for utility`;
       }
       const simulation = planner?.ready ? playbackRound(round.number) : null;
+      phaseShots = (simulation?.shots || []).filter((shot) => shot.phase === phase);
       const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
       phaseKills = visibleKills.map((kill) => ({
         ...kill, at: kill.phase < phase ? 0 : kill.time,
@@ -302,7 +304,8 @@ const ChampionsRadar = (() => {
         const holds = roundEvents.filter((event) => event.phase === phase
           && event.side === side && event.index === index && event.hold);
         marker.hidden = false;
-        return { marker, track, holds, death: eliminated?.time, priorDeath: eliminated?.phase < phase,
+        return { marker, track, holds, vision: simulation.vision[phase], cones: new Map(),
+          death: eliminated?.time, priorDeath: eliminated?.phase < phase,
           impact: eliminated?.phase === phase };
       }));
       place(animate && !reducedMotion ? 0 : 1);
@@ -341,8 +344,38 @@ const ChampionsRadar = (() => {
       context.translate(200, 200);
       context.rotate(rotation * Math.PI / 2);
       context.translate(-200, -200);
-      for (const { at, origin, impact, side } of phaseKills) {
-        if (at === 0 || progress < at || progress > at + .12 || progress === 1) continue;
+      for (const side of order) {
+        for (const [index, { track, vision, cones, death, priorDeath }] of paths[side].entries()) {
+          if (priorDeath || (death != null && progress >= death)) continue;
+          const cell = Math.floor(progress * (vision.length - 1));
+          if (!cones.has(cell)) {
+            cones.set(cell, ChampionsMovement.sightCone(planner, map.name, track, vision, side, index, progress));
+          }
+          const { point, rays, blind, angle } = cones.get(cell);
+          const [x, y] = ChampionsMovement.playback(track, progress).point.map((value) => value * 4);
+          context.beginPath();
+          context.moveTo(x, y);
+          for (const [rx, ry] of rays) context.lineTo(rx * 4, ry * 4);
+          context.closePath();
+          context.fillStyle = colors[order.indexOf(side)] + "1c";
+          context.fill();
+          const blocked = rays.every(([rx, ry]) => Math.hypot(rx - point[0], ry - point[1]) < 3);
+          const edges = blind || blocked ? [-1, 1].map((sign) => [
+            x + 16 * Math.cos(angle + sign * Math.PI / 6), y + 16 * Math.sin(angle + sign * Math.PI / 6),
+          ]) : [rays[0], rays.at(-1)].map(([rx, ry]) => [rx * 4, ry * 4]);
+          context.beginPath();
+          context.moveTo(...edges[0]);
+          context.lineTo(x, y);
+          context.lineTo(...edges[1]);
+          context.lineWidth = 1.2;
+          context.strokeStyle = blind ? "#efd08e" : colors[order.indexOf(side)] + "a8";
+          if (blind || blocked) context.setLineDash([2, 3]);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      }
+      for (const { time: at, origin, impact, side } of phaseShots) {
+        if (progress < at || progress > at + .12 || progress === 1) continue;
         context.strokeStyle = colors[order.indexOf(side)];
         context.globalAlpha = 1 - (progress - at) / .12;
         context.lineWidth = 2;
@@ -372,8 +405,8 @@ const ChampionsRadar = (() => {
       const seconds = ChampionsSmokes.now(roundState.round, roundState.phase, progress);
       for (const { marker, origin, landing, path, color, time, delivery, kind, footprint, description, hold, carried,
         phase, smokeTiming } of throws) {
-        const travelTime = hold || (delivery === "guided" ? .23 : .16);
-        const arrival = delivery === "travel" || delivery === "guided" ? Math.min(.98, time + travelTime) : time;
+        const travelTime = ChampionsMovement.travelTime({ hold, delivery });
+        const arrival = ChampionsMovement.arrivalTime({ time, hold, delivery });
         const castTime = ChampionsSmokes.now(roundState.round, phase, time);
         const active = smokeTiming ? seconds >= castTime : progress >= time;
         const lingering = roundState.phase === 0 || carried || ["smoke", "wall", "trap", "barrier"].includes(kind);

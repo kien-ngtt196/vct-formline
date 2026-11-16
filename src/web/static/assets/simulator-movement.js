@@ -101,7 +101,7 @@ const ChampionsMovement = (() => {
       candidates.sort((a, b) => distance(a, toward) - distance(b, toward));
       return candidates[Math.min(count * 3, candidates.length - 1)] || null;
     }
-    return { navigate, clear, setup, snap: (at) => { const cell = nearest(at); return cell < 0 ? null : point(cell); }, ready: main.length > 0 };
+    return { navigate, clear, contains, setup, snap: (at) => { const cell = nearest(at); return cell < 0 ? null : point(cell); }, ready: main.length > 0 };
   }
 
   const openTerrain = {
@@ -110,7 +110,7 @@ const ChampionsMovement = (() => {
       return Array.from({ length: length + 1 }, (_, i) => a.map((v, axis) =>
         v + (b[axis] - v) * i / Math.max(1, length)));
     },
-    clear: () => true, snap: (point) => point, setup: (_, point) => point,
+    clear: () => true, contains: () => true, snap: (point) => point, setup: (_, point) => point,
   };
 
   function covers(area, point, margin = 0) {
@@ -133,10 +133,18 @@ const ChampionsMovement = (() => {
     return true;
   }
 
+  const travelTime = ({ hold, delivery }) => hold || (delivery === "guided" ? .23 : .16);
+  const arrivalTime = (event) => ["travel", "guided"].includes(event.delivery)
+    ? Math.min(.98, event.time + travelTime(event)) : event.time;
+  const visionRange = 35;
+
   function create(map, round, roles, board, offset, resolveContact) {
     const scale = ChampionsAbilityGeometry.scaleFor(map);
     const tracks = [[], []];
     const frames = [];
+    const vision = [];
+    const blindUntil = tracks.map(() => Array(5).fill(-Infinity));
+    const flashed = new Set();
     let phase = -1;
     let tick = 0;
     let stopped = 0;
@@ -163,10 +171,15 @@ const ChampionsMovement = (() => {
           const via = phase === 2 && route.via && offset(route.via, index);
           let cells = via ? join(board.navigate(from, via), board.navigate(via, to)) : board.navigate(from, to);
           if (phase && dead(side, index, phase, 0)) cells = [from];
-          team[index] = { cells, cursor: 0, carry: 0, samples: [0], held: false };
+          const nextCell = cells[1] || from;
+          const facing = distance(from, nextCell) ? Math.atan2(nextCell[1] - from[1], nextCell[0] - from[0])
+            : team[index]?.facing ?? (side === round.attack ? 0 : Math.PI);
+          team[index] = { cells, cursor: 0, carry: 0, samples: [0], headings: [facing], facing, held: false };
         }
       }
       frames[phase] = tracks.map((team) => team.slice());
+      const previous = vision[phase - 1]?.at(-1);
+      vision[phase] = [previous || { screens: [], blinded: tracks.map(() => Array(5).fill(false)) }];
     }
 
     function activeEffects(events, time) {
@@ -176,7 +189,7 @@ const ChampionsMovement = (() => {
         if (event.smokeTiming) {
           if (seconds < event.smokeTiming.starts || seconds >= event.smokeTiming.ends) return [];
         } else {
-          const arrives = event.time + (event.delivery === "cast" ? .02 : .11);
+          const arrives = arrivalTime(event);
           const persists = ["smoke", "wall", "barrier"].includes(event.kind);
           if (event.phase !== phase) {
             if (!persists || event.phase !== phase - 1 || event.time < .7 || time > .18) return [];
@@ -193,6 +206,22 @@ const ChampionsMovement = (() => {
       const living = tracks.map((team, side) => team.map((track, index) => !dead(side, index, phase, time)));
       const obstacles = phase ? activeEffects(events, time) : [];
       const current = tracks.map((team) => team.map(position));
+      const screens = obstacles.filter(({ kind }) => ["smoke", "wall", "barrier"].includes(kind)).map(({ area }) => area);
+      const seconds = ChampionsSmokes.now(round, phase, time);
+      for (const event of events) {
+        if (event.kind !== "flash" || event.phase !== phase || flashed.has(event) || time < arrivalTime(event)) continue;
+        flashed.add(event);
+        for (const [side, team] of current.entries()) {
+          if (side === event.side && ["Leer", "Dizzy"].includes(event.name)) continue;
+          for (const [index, point] of team.entries()) {
+            if (living[side][index] && shotIsClear(board, event.landing, point, screens, 11 * scale)) {
+              blindUntil[side][index] = Math.max(blindUntil[side][index], seconds + 2);
+            }
+          }
+        }
+      }
+      const blinded = blindUntil.map((team) => team.map((until) => seconds < until));
+      vision[phase].push({ screens, blinded });
       for (const [side, team] of tracks.entries()) {
         for (const [index, track] of team.entries()) {
           const actions = events.filter((event) => event.phase === phase && event.side === side && event.index === index);
@@ -232,6 +261,7 @@ const ChampionsMovement = (() => {
               }
               track.cursor++;
               track.carry--;
+              track.facing = Math.atan2(cell[1] - here[1], cell[0] - here[0]);
               current[side][index] = cell;
             }
           }
@@ -240,14 +270,18 @@ const ChampionsMovement = (() => {
       }
       stoppedByPhase[phase] = stopped;
       if (resolveContact && phase > 0 && phase < 4) {
-        const screens = obstacles.filter(({ kind }) => ["smoke", "wall", "barrier"].includes(kind))
-          .map(({ area }) => area);
         const canShoot = (side, shooter, victim) => living[side][shooter] && living[1 - side][victim]
+          && !blinded[side][shooter]
           && !events.some((event) => event.side === side && event.index === shooter && event.phase === phase
             && event.hold && event.time <= time && time < event.time + event.hold)
-          && shotIsClear(board, current[side][shooter], current[1 - side][victim], screens, 35 * scale);
-        resolveContact(phase, time, current, canShoot);
+          && shotIsClear(board, current[side][shooter], current[1 - side][victim], screens, visionRange * scale);
+        const shot = resolveContact(phase, time, current, canShoot);
+        if (shot) {
+          const { side, killer, origin, impact } = shot;
+          tracks[side][killer].facing = Math.atan2(impact[1] - origin[1], impact[0] - origin[0]);
+        }
       }
+      for (const team of tracks) for (const track of team) track.headings.push(track.facing);
     }
 
     function moveTo(next, time, events) {
@@ -258,7 +292,27 @@ const ChampionsMovement = (() => {
       while (tick < Math.floor(time * steps)) advance(events);
     }
 
-    return { moveTo, position: (side, index) => position(tracks[side][index]), frames, stoppedByPhase };
+    return { moveTo, position: (side, index) => position(tracks[side][index]), frames, vision, stoppedByPhase };
+  }
+
+  function sightCone(board, map, track, frames, side, index, progress) {
+    const tick = Math.floor(progress * steps);
+    const { point } = playback(track, tick / steps);
+    const angle = track.headings[tick];
+    const { screens, blinded } = frames[tick];
+    const blind = blinded[side][index];
+    const range = blind ? 2 : visionRange * ChampionsAbilityGeometry.scaleFor(map);
+    const rays = Array.from({ length: 9 }, (_, beam) => {
+      const heading = angle + (beam - 4) * Math.PI / 24;
+      let endpoint = point;
+      for (let reach = .5; reach <= range; reach += .5) {
+        const sample = [point[0] + Math.cos(heading) * reach, point[1] + Math.sin(heading) * reach];
+        if (!board.contains(sample) || screens.some((area) => covers(area, sample))) break;
+        endpoint = sample;
+      }
+      return endpoint;
+    });
+    return { point, rays, blind, angle };
   }
 
   function playback(track, time) {
@@ -272,5 +326,5 @@ const ChampionsMovement = (() => {
     const to = track.cells[Math.min(track.cells.length - 1, cell + 1)];
     return { cell, point: from.map((value, i) => value + (to[i] - value) * (position - cell)) };
   }
-  return { terrain, openTerrain, create, playback, shotIsClear };
+  return { terrain, openTerrain, create, playback, shotIsClear, sightCone, arrivalTime, travelTime };
 })();

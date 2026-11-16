@@ -91,33 +91,39 @@ const ChampionsUtility = (() => {
 
   function playbook(map, original, layout, lane, alternate, lines, roles, points, terrain, offset) {
     const round = { ...original, kills: [] };
-    // The score model supplies fight opportunities. The radar resolves who can
-    // actually fight from the positions reached during playback.
-    const pending = original.kills.map((kill) => ({
-      ...kill, phase: Math.min(kill.phase, 3), time: kill.phase === 4 ? .9 : kill.time,
-    }));
+    const shots = [];
+    const misses = new Set();
     function resolveContact(phase, time, positions, canShoot) {
-      const last = round.kills.at(-1);
-      if (last?.phase === phase && time - last.time < .06) return;
-      for (const [requestIndex, request] of pending.entries()) {
-        if (request.phase > phase || (request.phase === phase && request.time > time)) continue;
-        const { side } = request;
-        let best;
+      const last = shots.at(-1);
+      if (last?.phase === phase && time - last.time < .04) return;
+      const winnerAlone = round.kills.filter(({ side }) => side !== round.winner).length === 4;
+      let best;
+      for (const side of [round.winner, 1 - round.winner]) {
+        // The bracket has already resolved the round. The last player on the
+        // winning side can take fire, but cannot be eliminated in the replay.
+        const miss = winnerAlone && side !== round.winner;
         for (const [killer, origin] of positions[side].entries()) {
           for (const [victim, impact] of positions[1 - side].entries()) {
-            const cost = Math.hypot(origin[0] - impact[0], origin[1] - impact[1])
-              + (killer === request.killer ? 0 : 4) + (victim === request.victim ? 0 : 4);
+            const key = `${phase}:${side}:${killer}:${victim}`;
+            if (miss && misses.has(key)) continue;
+            const skill = lines[side][killer].player.skill ?? .5;
+            const cost = Math.hypot(origin[0] - impact[0], origin[1] - impact[1]) - skill * 8
+              + (side === round.winner ? 0 : 1);
             if ((best && cost >= best.cost) || !canShoot(side, killer, victim)) continue;
-            best = { killer, victim, origin, impact, cost };
+            best = { side, killer, victim, origin, impact, cost, miss, key };
           }
         }
-        if (!best) continue;
-        const { killer, victim, origin, impact } = best;
-        round.kills.push({ side, killer, victim, phase, time, origin, impact,
-          text: `${lines[side][killer].player.name} eliminated ${lines[1 - side][victim].player.name}` });
-        pending.splice(requestIndex, 1);
-        return;
       }
+      if (!best) return;
+      const { side, killer, victim, origin, impact, miss, key } = best;
+      const shot = { side, killer, victim, phase, time, origin, impact };
+      shots.push(shot);
+      if (miss) misses.add(key);
+      else {
+        round.kills.push({ ...shot,
+          text: `${lines[side][killer].player.name} eliminated ${lines[1 - side][victim].player.name}` });
+      }
+      return shot;
     }
     const movement = ChampionsMovement.create(map, round, roles, terrain, offset, resolveContact);
     const { main, link, back, target, linkName, backName } = lane;
@@ -338,7 +344,7 @@ const ChampionsUtility = (() => {
     }
     perform(3);
     perform(4);
-    return { events: roundEvents, kills: round.kills, tracks: movement.frames,
+    return { events: roundEvents, kills: round.kills, shots, tracks: movement.frames, vision: movement.vision,
       stopped: movement.stoppedByPhase, planted: round.planted };
   }
 
