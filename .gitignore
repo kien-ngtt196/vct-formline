@@ -11,7 +11,13 @@ __pycache__/
 data/raw/
 data/*.csv
 data/*.dump
-src/web/static/assets/
+src/web/static/assets/*
+!src/web/static/assets/simulator-ability-catalog.js
+!src/web/static/assets/simulator-utility.js
+!src/web/static/assets/simulator-ability-geometry.js
+!src/web/static/assets/simulator-movement.js
+!src/web/static/assets/simulator-smokes.js
+!src/web/static/assets/simulator-commentary.js
 .pytest_cache/
 *.log
 

@@ -70,7 +70,7 @@
       },
       {
         title: "Choose a region and play",
-        text: "Pick a region to represent and start the tournament. Select Play next series to reveal the map draw, agent picks, and results.",
+        text: "Pick a region and start the tournament. Play the next series to watch the simulated rounds on the radar, or use the skip controls to jump ahead.",
         icon: playIcon,
       },
       {
@@ -421,7 +421,7 @@
       if (selectedReplay && !playing) {
         const { fixture, result } = selectedReplay;
         center.append(node("h2", "", fixture.title), seriesHeadline(result), mapOrder(result.order));
-        result.maps.forEach((map) => center.append(mapCard(map, result, true)));
+        result.maps.forEach((map) => center.append(mapCard(map, result)));
       } else if (!playing) {
         center.append(node("p", "sim-muted", "Play your next series to see the map draw and agent picks."));
       }
@@ -737,21 +737,44 @@
     return list;
   }
 
-  function mapCard(map, result, revealed) {
+  function makeRadar(map, result, exit, live = false) {
+    return ChampionsRadar.create({
+      map, teams: result.sides.map((id) => run.teams[id]), order: sideOrder(result),
+      agents: catalog.agents, node, button, addImage, teamIdentity, controlIcon, exit, live,
+    });
+  }
+
+  function watchRounds(map, result) {
+    const dialog = node("dialog", "sim-radar-dialog");
+    const radar = makeRadar(map, result, () => dialog.close());
+    radar.heading.id = "sim-radar-title";
+    dialog.setAttribute("aria-labelledby", radar.heading.id);
+    const close = button("Close", () => dialog.close());
+    dialog.append(close, radar.panel);
+    dialog.addEventListener("close", () => {
+      radar.dispose();
+      dialog.remove();
+    }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    radar.heading.focus();
+  }
+
+  function mapCard(map, result) {
     const card = node("article", "sim-map");
     card.style.setProperty("--sim-map-image", `url("${mapImage(map.name)}")`);
     const line = node("div", "sim-map-line");
     const [left, right] = sideOrder(result);
-    line.append(agentIcons(map.stats[left]),
-      revealed ? mapScore(map, result) : node("span", "sim-map-score"),
-      agentIcons(map.stats[right]));
-    if (!revealed) line.querySelector(".sim-map-score").append(spinner());
+    line.append(agentIcons(map.stats[left]), mapScore(map, result), agentIcons(map.stats[right]));
     card.append(node("h3", "", map.name), line);
-    if (revealed && map.scenes.length) {
+    if (map.scenes.length) {
       const list = node("ul", "sim-highlights");
       for (const scene of map.scenes) list.append(node("li", "", scene));
       card.append(list);
     }
+    const actions = node("div", "sim-map-actions");
+    actions.append(button("Watch rounds", () => watchRounds(map, result), "sim-button", playIcon));
+    card.append(actions);
     return card;
   }
 
@@ -769,20 +792,24 @@
       center.append(mapOrder(result.order));
       message.textContent = "Locking agent compositions…";
       await pause(650);
-      for (const map of result.maps) {
-        message.textContent = `${map.name} in progress…`;
-        const card = mapCard(map, result, false);
-        center.append(card);
-        if (map.scenes.length) {
-          const highlights = node("ul", "sim-highlights");
-          card.append(highlights);
-          for (const scene of map.scenes) {
-            await pause(700);
-            highlights.append(node("li", "sim-highlight-enter", scene));
-          }
-        }
-        await pause(2000);
-        card.querySelector(".sim-map-score").replaceWith(mapScore(map, result));
+      status.remove();
+      const playback = node("div", "sim-match-playback");
+      center.append(playback);
+      for (const [index, map] of result.maps.entries()) {
+        const action = await new Promise((resolve) => {
+          const radar = makeRadar(map, result, resolve, true);
+          playback.replaceChildren(radar.panel);
+          if (location.hash === "#simulator") radar.heading.focus();
+        });
+        if (action === "series") break;
+        if (action === "skip" || index === result.maps.length - 1) continue;
+        await new Promise((resolve) => {
+          const card = mapCard(map, result);
+          const nextMap = button("Next map", () => resolve(), "sim-button sim-primary", playIcon);
+          card.querySelector(".sim-map-actions").append(nextMap);
+          playback.replaceChildren(card);
+          if (location.hash === "#simulator") nextMap.focus({ preventScroll: true });
+        });
       }
       run.results[fixture.id] = result;
       selectedReplay = { fixture, result };

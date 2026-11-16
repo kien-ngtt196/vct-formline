@@ -1366,6 +1366,7 @@ def get_response(path, query):
         if path == "/":
             return static_response("index.html")
         elif path in {"/app.css", "/app.js", "/simulator.css", "/simulator-engine.js", "/simulator.js",
+                      "/simulator-tactics.js", "/simulator-radar.js",
                       "/favicon.svg", "/champions-mark.svg"} or path.startswith("/assets/"):
             return static_response(path.lstrip("/"))
         elif path.startswith("/vct-images/"):

@@ -125,43 +125,39 @@ const ChampionsSim = (() => {
 
   function roundsFor(chance, random) {
     const rounds = [0, 0];
-    while (Math.max(...rounds) < 13 || Math.abs(rounds[0] - rounds[1]) < 2) {
-      rounds[random() < chance ? 0 : 1]++;
+    const winners = [];
+    while (Math.max(...rounds) < 13 || (winners.length > 24 && Math.abs(rounds[0] - rounds[1]) < 2)) {
+      const winner = random() < chance ? 0 : 1;
+      winners.push(winner);
+      rounds[winner]++;
       if (rounds[0] === 30 && rounds[1] === 30) {
-        rounds[random() < chance ? 0 : 1] += 2;
+        const tiebreak = random() < chance ? 0 : 1;
+        winners.push(tiebreak, tiebreak);
         break;
       }
     }
-    return rounds;
+    return winners;
   }
 
-  function distribute(total, weights, random) {
-    const result = weights.map(() => 0);
-    for (let index = 0; index < total; index++) result[weightedIndex(weights, random)]++;
-    return result;
+  function statLines(teams, picks, timeline) {
+    const stats = teams.map((team, side) => team.roster.map((player, index) => ({
+      player, team: team.id, agent: picks[side].agents[index], kills: 0, deaths: 0, assists: 0,
+    })));
+    for (const { kills } of timeline) {
+      for (const { side, killer, victim, assist } of kills) {
+        stats[side][killer].kills++;
+        stats[1 - side][victim].deaths++;
+        if (assist !== null) stats[side][assist].assists++;
+      }
+    }
+    const rounds = timeline.length;
+    for (const line of stats.flat()) {
+      line.acs = Math.round((line.kills * 235 + line.assists * 48) / rounds);
+      line.rating = clamp(0.54 + (line.kills + line.assists * 0.3) / rounds * 0.82
+        + (line.kills - line.deaths) / rounds * 0.26, 0.15, 2.4);
+    }
+    return stats;
   }
-
-  function statLines(team, agents, ownDeaths, enemyDeaths, rounds, random) {
-    const form = team.roster.map((player) => player.skill * (0.72 + random() * 0.56));
-    const kills = distribute(enemyDeaths, form, random);
-    const deaths = distribute(ownDeaths, form.map((value) => 1 / value), random);
-    const assists = distribute(Math.round(enemyDeaths * 0.5), form, random);
-    return team.roster.map((player, i) => ({
-      player, team: team.id, agent: agents[i], kills: kills[i], deaths: deaths[i], assists: assists[i],
-      acs: Math.round((kills[i] * 235 + assists[i] * 48) / rounds),
-      rating: clamp(0.54 + (kills[i] + assists[i] * 0.3) / rounds * 0.82
-        + (kills[i] - deaths[i]) / rounds * 0.26, 0.15, 2.4),
-    }));
-  }
-
-  const highlights = [
-    (w, l) => `${w} converts a 1v4 clutch after ${l} misses the opening shot.`,
-    (w, l) => `${w} times the swing and wins the 1v1 against ${l}.`,
-    (w, l) => `${l} breaks into the site, but ${w} finds a quick trade and sticks the defuse.`,
-    (w, l) => `${w} reads ${l}'s flank and turns the retake into a triple kill.`,
-    (w, l) => `${l} nearly steals the round with a Sheriff; ${w} wins it with seconds left.`,
-    (w, l) => `${w} catches ${l} on the rotate and secures the round with a two-piece.`,
-  ];
 
   function play(catalog, run, match, random = Math.random) {
     const sides = sidesFor(run, match);
@@ -175,19 +171,15 @@ const ChampionsSim = (() => {
       const power = teams.map((team, index) =>
         sum(team.roster.map((player) => player.skill)) / 5 + picks[index].fit * 0.0007);
       const chance = clamp(0.5 + (power[0] - power[1]) * 0.63 + (random() - 0.5) * 0.13, 0.28, 0.72);
-      const rounds = roundsFor(chance, random);
+      const timeline = ChampionsTactics.playMap(name, roundsFor(chance, random), teams, random);
+      const rounds = timeline.at(-1).score;
       const won = rounds[0] > rounds[1] ? 0 : 1;
       score[won]++;
-      const deaths = rounds.map((wonRounds, index) =>
-        Math.round(wonRounds * (1.65 + random() * 0.65) + rounds[1 - index] * (3.8 + random() * 0.8)));
-      const stats = teams.map((team, index) =>
-        statLines(team, picks[index].agents, deaths[index], deaths[1 - index], sum(rounds), random));
-      const scenes = match.id === "GF" ? shuffle(highlights, random).slice(0, 3).map((scene, index) => {
-        const w = teams[won].roster[Math.floor(random() * 5)].name;
-        const l = teams[1 - won].roster[Math.floor(random() * 5)].name;
-        return `Round ${[4, Math.floor(sum(rounds) / 2), sum(rounds)][index]} · ${scene(w, l)}`;
-      }) : [];
-      maps.push({ name, rounds, stats, scenes });
+      const stats = statLines(teams, picks, timeline);
+      const highlights = timeline.filter((round) => ["clutch", "defuse", "save"].includes(round.finish));
+      const scenes = match.id === "GF" ? highlights.slice(-3).map((round) =>
+        `Round ${round.number} · ${round.notes.at(-1)}`) : [];
+      maps.push({ name, rounds, stats, scenes, timeline });
       if (score[won] > match.bestOf / 2) break;
     }
     const win = score[0] > score[1] ? 0 : 1;
