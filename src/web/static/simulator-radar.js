@@ -178,10 +178,12 @@ const ChampionsRadar = (() => {
 
     function playbackRound(number) {
       while (rounds.length < number) {
-        const round = map.timeline[rounds.length];
-        if (round.number === 13) points.forEach((team) => team.fill(0));
+        const base = map.timeline[rounds.length];
+        const buys = ChampionsUtility.buyRound(map.stats, base, rounds.at(-1)?.economy);
+        const round = { ...base, buys };
+        if (round.number === 13 || round.number > 24) points.forEach((team) => team.fill(round.number > 24 ? 4 : 0));
         const simulation = ChampionsUtility.planRound(map, agents, round, points, planner, offset);
-        rounds.push(simulation);
+        rounds.push({ ...simulation, buys, economy: ChampionsUtility.settleRound(round, buys, simulation) });
         for (const { side, killer, victim } of simulation.kills) {
           points[side][killer]++;
           points[1 - side][victim]++;
@@ -212,25 +214,36 @@ const ChampionsRadar = (() => {
       roundLabel.textContent = `Round ${round.number} / ${map.timeline.length}`;
       timeline.value = String(frame);
       timeline.setAttribute("aria-valuetext", `Round ${round.number}, ${ChampionsTactics.phases[phase]}`);
+      const simulation = planner?.ready ? playbackRound(round.number) : null;
       for (const side of order) {
         const { assignment, buy, loadout } = teamCards[side];
         assignment.textContent = side === round.attack ? "Attack" : "Defense";
-        buy.textContent = `${round.buys[side].label} · ≈${round.buys[side].credits.toLocaleString()} credits/player`;
-        const { gun, shield, weaponCost, armorCost, utility: reserve, carried } = round.buys[side];
-        loadout.hidden = phase !== 0;
-        loadout.textContent = `${gun} (${carried ? "carried" : weaponCost}) · ${shield === "none" ? "no armor" : `${shield} armor (${armorCost})`} · ≈${reserve} for utility`;
+        const purchase = simulation?.buys[side];
+        buy.textContent = purchase ? `${purchase.label} · ≈${purchase.credits.toLocaleString()} credits/player` : "";
+        loadout.hidden = phase !== 0 || !purchase;
+        if (purchase && phase === 0) {
+          const weapons = new Map();
+          for (const { gun } of purchase.players) weapons.set(gun, (weapons.get(gun) || 0) + 1);
+          const saved = purchase.players.filter(({ carried }) => carried).length;
+          const charges = purchase.players.reduce((total, player) => total + player.carriedCharges, 0);
+          loadout.textContent = [
+            ...Array.from(weapons, ([gun, count]) => `${count}× ${gun}`),
+            saved ? `${saved} saved ${saved === 1 ? "weapon" : "weapons"}` : null,
+            charges ? `${charges} carried utility ${charges === 1 ? "charge" : "charges"}` : null,
+          ].filter(Boolean).join(" · ");
+        }
       }
-      const simulation = planner?.ready ? playbackRound(round.number) : null;
       phaseShots = (simulation?.shots || []).filter((shot) => shot.phase === phase);
       const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
       utility.replaceChildren();
       if (!simulation) {
-        prepareCalls(round, phase);
+        earlierCalls = [];
+        phaseCalls = [];
         place(animate ? 0 : 1);
         return;
       }
       roundState = { phase, round: { ...round, planted: simulation.planted } };
-      prepareCalls(round, phase, simulation);
+      prepareCalls({ ...round, buys: simulation.buys }, phase, simulation);
       const lane = ChampionsTactics.lanesFor(map.name, round.site);
       const roundEvents = simulation.events;
       const events = roundEvents.filter((event) => event.phase === phase);
@@ -254,8 +267,7 @@ const ChampionsRadar = (() => {
         const footprint = phase === 0 || event.carried ? null
           : ChampionsAbilityGeometry.footprint(map.name, name, origin, landing);
         const detail = [area, event.smokeTiming && event.phase < phase ? "carried from the previous phase" : purpose,
-          footprint?.dimensions, event.refilled ? "recharged" : null,
-          event.cost ? `${event.cost} credits` : null].filter(Boolean).join(" · ");
+          footprint?.dimensions, event.refilled ? "recharged" : null].filter(Boolean).join(" · ");
         marker.title = `${player.name} · ${agents[agent].name} · ${name} · ${detail}`;
         placeOnMap(marker, footprint?.center || landing);
         const path = event.path || (delivery === "guided" ? planner.navigate(origin, landing) : null);

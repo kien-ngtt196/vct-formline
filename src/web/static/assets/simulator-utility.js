@@ -69,6 +69,89 @@ const ChampionsUtility = (() => {
     "Barrier Orb", "Barrier Mesh", "Incendiary", "Snake Bite", "Hot Hands", "Mosh Pit", "FRAG/ment",
     "Aftershock", "Paint Shells", "Slow Orb", "Razorvine", "Stim Beacon"]);
   const buyLimits = { Pistol: 4, Eco: 3, "Half-buy": 6, "Force buy": 7, Bonus: 7, "Full buy": 13, "Overtime buy": 13 };
+  const gunPrices = { Classic: 0, Ghost: 500, Sheriff: 800, Stinger: 1100, Spectre: 1600,
+    Bulldog: 2050, Phantom: 2900, Vandal: 2900 };
+  const shieldPrices = { none: 0, light: 400, regen: 650, heavy: 1000 };
+  const isRifle = (gun) => gun === "Vandal" || gun === "Phantom";
+  const signatureAbility = ({ name, slot }) => (slot === "Ability2" && !Object.hasOwn(prices, name))
+    || freeFirst.has(name);
+  const roundReset = (number) => number === 1 || number === 13 || number > 24;
+
+  function buyRound(stats, round, previous) {
+    const pistol = round.number === 1 || round.number === 13;
+    const overtime = round.number > 24;
+    return stats.map((team, side) => {
+      const saved = roundReset(round.number) ? null : previous?.[side];
+      const bonus = [3, 15].includes(round.number) && saved?.players.filter(({ gun }) => gun === "Spectre").length >= 3;
+      const players = team.map(({ agent }, index) => {
+        const prior = saved?.players[index];
+        const credits = prior?.credits ?? (overtime ? 5000 : 800);
+        const savedGun = prior?.gun || "Classic";
+        const pickRifle = (round.number + index + side) % 3 ? "Vandal" : "Phantom";
+        let choice = "Classic";
+        if (pistol && (index + side) % 5 < 3) choice = "Ghost";
+        else if (overtime || (!bonus && (credits >= 3900 || isRifle(savedGun)))) choice = pickRifle;
+        else if (bonus && !isRifle(savedGun)) choice = credits >= 2000 ? "Spectre" : "Classic";
+        else if (credits >= 3250) choice = "Bulldog";
+        else if (credits >= 2700) choice = "Spectre";
+        else if (credits >= 2250) choice = "Stinger";
+        else if (credits >= 1800) choice = "Sheriff";
+        const gun = gunPrices[savedGun] >= gunPrices[choice] ? savedGun : choice;
+        const weaponCost = gun === savedGun ? 0 : gunPrices[gun];
+        const afterWeapon = credits - weaponCost;
+        const wantedShield = isRifle(gun) && afterWeapon >= 1350 ? "heavy"
+          : isRifle(gun) && afterWeapon >= 650 ? "regen"
+            : gunPrices[gun] >= 1100 && afterWeapon >= 400 ? "light" : "none";
+        const savedShield = prior?.shield || "none";
+        const shield = shieldPrices[savedShield] >= shieldPrices[wantedShield] ? savedShield : wantedShield;
+        const armorCost = shield === savedShield ? 0 : shieldPrices[shield];
+        const cap = isRifle(gun) ? 1100 : pistol ? 550 : gunPrices[gun] >= 1100 ? 650 : 350;
+        const budget = Math.min(afterWeapon - armorCost, cap);
+        const charges = { ...prior?.charges };
+        const carriedCharges = Object.values(charges).reduce((total, count) => total + count, 0);
+        let utilityCost = 0;
+        for (const ability of ChampionsAbilityCatalog[agent] || []) {
+          const { name } = ability;
+          if (!category.has(name) || ability.slot === "Ultimate") continue;
+          const signature = signatureAbility(ability);
+          const cost = prices[name] ?? (signature ? 0 : 200);
+          let count = Math.max(charges[name] || 0, Number(signature));
+          const capacity = extraCharges[name] || 1;
+          while (count < capacity && utilityCost + cost <= budget) {
+            count++;
+            utilityCost += cost;
+          }
+          charges[name] = count;
+        }
+        return { credits, gun, shield, carried: gun === savedGun && gun !== "Classic", carriedCharges,
+          charges, spent: weaponCost + armorCost + utilityCost };
+      });
+      const label = pistol ? "Pistol" : overtime ? "Overtime buy" : players.every(({ gun }) => isRifle(gun)) ? "Full buy"
+        : bonus ? "Bonus" : players.some(({ gun }) => gunPrices[gun] >= 1600) ? "Force buy"
+          : players.some(({ gun }) => gunPrices[gun] >= 800) ? "Half-buy" : "Eco";
+      const credits = Math.round(players.reduce((total, player) => total + player.credits, 0) / players.length);
+      return { label, credits, players, losses: saved?.losses || 0 };
+    });
+  }
+
+  function settleRound(round, buys, replay) {
+    return buys.map((buy, side) => {
+      const losses = side === round.winner ? 0 : buy.losses + 1;
+      const detonated = replay.planted && round.winner === round.attack
+        && ["detonate", "save"].includes(round.finish);
+      const players = buy.players.map((player, index) => {
+        const survived = !replay.kills.some((kill) => kill.side !== side && kill.victim === index);
+        const kills = replay.kills.filter((kill) => kill.side === side && kill.killer === index).length;
+        const savedOnLoss = survived && (side === round.attack ? !replay.planted : detonated);
+        const reward = !losses ? 3000 : savedOnLoss ? 1000 : [1900, 2400, 2900][Math.min(losses, 3) - 1];
+        const plant = replay.planted && side === round.attack ? 300 : 0;
+        return { credits: Math.min(9000, player.credits - player.spent + reward + kills * 200 + plant),
+          gun: survived ? player.gun : "Classic", shield: survived ? player.shield : "none",
+          charges: replay.unusedCharges[side][index] };
+      });
+      return { losses, players };
+    });
+  }
   const kinds = (...names) => names;
   const iconUrl = (agent, ability) =>
     `/vct-images/radar/abilities/${agent}-${ability.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
@@ -137,7 +220,7 @@ const ChampionsUtility = (() => {
     const uses = [new Map(), new Map()];
     const spent = [0, 0];
     const usedBy = lines.map((team) => team.map(() => 0));
-    const money = lines.map((team, side) => team.map(() => round.buys[side].utility));
+    const unusedCharges = round.buys.map(({ players }) => players.map(({ charges }) => ({ ...charges })));
     const scale = ChampionsAbilityGeometry.scaleFor(map);
     const attack = round.attack;
     const defend = 1 - attack;
@@ -176,20 +259,18 @@ const ChampionsUtility = (() => {
           const history = uses[side].get(`${index}:${name}`) || [];
           const cooldown = recharge[name];
           const refills = cooldown && history.length ? Math.floor((seconds - history[0].seconds) / cooldown) : 0;
-          const charge = history.length - refills;
+          const remaining = unusedCharges[side][index][name] || 0;
+          const usedRefills = history.filter((cast) => cast.refilled).length;
+          const refilled = refills > usedRefills && remaining < (extraCharges[name] || 1);
+          if (kind !== "ultimate" && !remaining && !refilled) return [];
           if (smoke?.reserve) {
             // A default/fake must leave enough cover for the real execute. Count
             // only recharges that will have completed by the planned hit.
             const capacity = extraCharges[name] || 1;
             const futureRefills = cooldown ? Math.floor((smoke.neededBy - (history[0]?.seconds ?? seconds)) / cooldown) : 0;
-            const available = Math.min(capacity, capacity - history.length - 1 + futureRefills);
+            const available = Math.min(capacity, remaining - 1 + Math.max(0, futureRefills - usedRefills));
             if (available < smoke.reserve) return [];
           }
-          const refilled = refills > history.filter((cast) => cast.refilled).length;
-          const signature = (slot === "Ability2" && !Object.hasOwn(prices, name)) || freeFirst.has(name);
-          const cost = refilled || kind === "ultimate" || (signature && charge <= 0)
-            ? 0 : prices[name] ?? (signature ? 0 : 200);
-          if (charge >= (extraCharges[name] || 1) || cost > money[side][index]) return [];
           let destination = landing;
           if (smoke) destination = ChampionsSmokes.placement(map, name, smoke.spot, origin, terrain);
           else if (phase === 0) destination = terrain.setup(name, origin, side === defend ? main : lane.staging, usedBy[side][index]);
@@ -216,7 +297,7 @@ const ChampionsUtility = (() => {
             || time + hold > .94) : distance > maxRange) return [];
           if (device && round.kills.some((kill) => kill.phase === phase && kill.side === side && kill.killer === index
             && kill.time > time && kill.time < time + hold)) return [];
-          return [{ side, index, agent, player, name, kind, priority, origin, destination, distance, cost,
+          return [{ side, index, agent, player, name, kind, priority, origin, destination, distance,
             refilled, hold, path }];
         });
       });
@@ -229,9 +310,11 @@ const ChampionsUtility = (() => {
       const key = `${index}:${name}`;
       uses[side].set(key, [...(uses[side].get(key) || []), { seconds, refilled: event.refilled }]);
       usedBy[side][index]++;
-      money[side][index] -= event.cost;
       if (kind === "ultimate") points[side][index] = 0;
-      else spent[side]++;
+      else {
+        spent[side]++;
+        if (!event.refilled) unusedCharges[side][index][name]--;
+      }
       const effect = effects[kind];
       const delivery = kind === "entry" ? "move" : event.hold ? "guided"
         : stationary.has(name) || ["trap", "barrier", "support", "ultimate", "wall"].includes(kind) ? "cast"
@@ -271,7 +354,7 @@ const ChampionsUtility = (() => {
             && Math.hypot(...movement.position(attack, index).map((value, axis) => value - setup.landing[axis])) <= 7 * scale);
           const smokeTiming = setup.name === "Cyber Cage"
             ? ChampionsSmokes.timing(setup, ChampionsSmokes.now(round, phase, request.time)) : null;
-          if (alive && nearAttackers) roundEvents.push({ ...setup, setup, phase, time: request.time, cost: 0, smokeTiming,
+          if (alive && nearAttackers) roundEvents.push({ ...setup, setup, phase, time: request.time, smokeTiming,
             purpose: "activates the setup as attackers reach the choke" });
         } else cast(request.side, phase, request.time, ...request.rest);
       }
@@ -344,7 +427,7 @@ const ChampionsUtility = (() => {
     }
     perform(3);
     perform(4);
-    return { events: roundEvents, kills: round.kills, shots, tracks: movement.frames, vision: movement.vision,
+    return { events: roundEvents, kills: round.kills, shots, unusedCharges, tracks: movement.frames, vision: movement.vision,
       stopped: movement.stoppedByPhase, planted: round.planted };
   }
 
@@ -355,5 +438,5 @@ const ChampionsUtility = (() => {
       ChampionsTactics.lanesFor(map.name, original.alternate), map.stats, roles, points, terrain, offset);
   }
 
-  return { iconUrl, planRound };
+  return { iconUrl, buyRound, settleRound, planRound };
 })();

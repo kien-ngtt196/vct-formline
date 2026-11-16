@@ -71,7 +71,10 @@ function simulateRound(controller, mapName, terrain, changes = {}) {
   const stats = [0, 1].map((side) => [controller, 'jett', 'sova', 'killjoy', 'sage']
     .map((agent, i) => ({ agent, player: { name: `${side}-${i}` } })));
   const round = { ...base, attack: 0, winner: 0, plan: 'Fake', planted: false, kills: [],
-    buys: [0, 1].map(() => ({ label: 'Full buy', utility: 850 })), ...changes };
+    ...changes };
+  round.buys = utility.buyRound(stats, round, stats.map((team) => ({
+    players: team.map(() => ({ credits: 5000 })),
+  })));
   return utility.planRound({ name: mapName, stats }, agents, round,
     stats.map(() => [0, 0, 0, 0, 0]), terrain);
 }
@@ -133,3 +136,29 @@ const wallTerrain = { ...staticTerrain, contains: ([x]) => x < 44 };
 const cone = movement.sightCone(wallTerrain, 'Lotus', replay.frames[1][0][0], replay.vision[1], 0, 0, 1);
 assert.ok(cone.rays.some(([x]) => x > 40), 'the view cone extends in the player’s facing direction');
 assert.ok(cone.rays.every(([x]) => x < 44), 'the view cone stops at a wall');
+
+const rosters = [0, 1].map(() => Array.from({ length: 5 }, () => ({ agent: 'omen' })));
+const saved = rosters.map((team) => ({ losses: 0, players: team.map(() => ({
+  credits: 150, gun: 'Vandal', shield: 'heavy', charges: { 'Dark Cover': 2, Paranoia: 1, 'Shrouded Step': 1 },
+})) }));
+const buys = utility.buyRound(rosters, { number: 7 }, saved);
+assert.equal(buys[0].label, 'Full buy');
+assert.ok(buys[0].players.every((player) => player.carried && player.gun === 'Vandal' && !player.spent
+  && player.charges['Dark Cover'] === 2 && player.charges.Paranoia === 1));
+const unusedCharges = buys.map(({ players }) => players.map(({ charges }) => ({ ...charges })));
+unusedCharges[0][0]['Dark Cover']--;
+const next = utility.settleRound({ ...base, attack: 0, winner: 1 }, buys, {
+  planted: false, unusedCharges, kills: [{ side: 1, killer: 0, victim: 0 }],
+});
+assert.equal(next[0].players[0].gun, 'Classic');
+assert.equal(next[0].players[0].charges.Paranoia, 1, 'unused purchased utility survives death');
+assert.equal(next[0].players[0].charges['Dark Cover'], 1, 'spent charges are deducted');
+assert.equal(next[0].players[1].gun, 'Vandal');
+assert.equal(next[0].players[1].credits, 1150, 'losing attacker who saves without planting gets 1,000');
+assert.equal(next[1].players[0].credits, 3350, 'kill credits go to the player who earned them');
+const halftime = utility.buyRound(rosters, { number: 13 }, saved);
+assert.equal(halftime[0].label, 'Pistol');
+assert.ok(halftime[0].players.every((player) => player.credits === 800 && !player.carried && !player.carriedCharges));
+const overtime = utility.buyRound(rosters, { number: 26 }, saved);
+assert.equal(overtime[0].label, 'Overtime buy');
+assert.ok(overtime[0].players.every((player) => player.credits === 5000 && !player.carried && !player.carriedCharges));

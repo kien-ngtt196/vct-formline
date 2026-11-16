@@ -48,35 +48,6 @@ const ChampionsTactics = (() => {
     return { target, main, link, back, linkName, backName, staging: staging[map][site] };
   }
 
-  const gunPrices = { Classic: 0, Ghost: 500, Sheriff: 800, Stinger: 1100, Spectre: 1600,
-    Bulldog: 2050, Phantom: 2900, Vandal: 2900 };
-  const shieldPrices = { none: 0, light: 400, regen: 650, heavy: 1000 };
-
-  function economy(number, credits, previous, side, random) {
-    const purchase = (label, gun, shield, utilityCap, carried = false) => {
-      const weaponCost = carried ? 0 : gunPrices[gun];
-      const armorCost = shieldPrices[shield];
-      const utility = Math.min(credits - weaponCost - armorCost, utilityCap);
-      return { label, credits, gun, shield, weaponCost, armorCost, utility,
-        spent: weaponCost + armorCost + utility, carried };
-    };
-    if (number === 1 || number === 13) return purchase("Pistol",
-      random() < .55 ? "Ghost" : "Classic", "none", 550);
-    if (number > 24) return purchase("Overtime buy", "Vandal", "heavy", 850);
-    if ((number === 3 || number === 15) && previous[0].winner === side && previous[1].winner === side) {
-      return purchase("Bonus", "Spectre", "light", 650, true);
-    }
-    if (credits >= 3900) {
-      const shield = credits >= 4450 ? "heavy" : "regen";
-      return purchase("Full buy", random() < .3 ? "Phantom" : "Vandal", shield, 850);
-    }
-    if (credits >= 2200 && (previous.at(-1)?.winner === side || random() < .38)) {
-      return purchase("Force buy", credits >= 3250 ? "Bulldog" : "Spectre", "light", 550);
-    }
-    if (credits >= 2600) return purchase("Half-buy", credits >= 3200 ? "Stinger" : "Sheriff", "light", 350);
-    return purchase("Eco", credits >= 1800 ? "Sheriff" : "Classic", "none", 200);
-  }
-
   const buySeconds = (number) => number === 1 || number === 13 ? 45 : 30;
   const phaseDuration = (round, phase) => [buySeconds(round.number), round.plan === "Rush" ? 17 : 36,
     round.plan === "Rush" ? 31 : 38, round.planted ? 45 : 29, 0][phase];
@@ -140,18 +111,9 @@ const ChampionsTactics = (() => {
   function playMap(name, winners, teams, random) {
     const sites = Object.keys(layouts[name]?.sites || { A: null, B: null });
     const score = [0, 0];
-    let credits = [800, 800];
-    let losses = [0, 0];
-    let half = [];
     return winners.map((winner, index) => {
       const number = index + 1;
       const attack = number <= 12 || (number > 24 && number % 2 === 1) ? 0 : 1;
-      if (number === 13) {
-        half = [];
-        credits = [800, 800];
-        losses = [0, 0];
-      }
-      const buys = credits.map((budget, side) => economy(number, number > 24 ? 5000 : budget, half, side, random));
       const site = pick(sites, random);
       const alternate = pick(sites.filter((letter) => letter !== site), random);
       const plans = ["Rush", "Rush", "Default", "Slow execute", "Fake", "Split", "Lurk"];
@@ -216,13 +178,6 @@ const ChampionsTactics = (() => {
       }[finish];
       const before = [...score];
       score[winner]++;
-      losses = losses.map((count, side) => side === winner ? 0 : count + 1);
-      credits = buys.map((buy, side) => Math.min(9000, Math.round(buy.credits - buy.spent
-        + (side === winner ? 3000 : (side === attack ? !planted : finish === "save" || finish === "detonate")
-          ? (1000 * living[side].length + [1900, 2400, 2900][Math.min(losses[side], 3) - 1] * (5 - living[side].length)) / 5
-          : [1900, 2400, 2900][Math.min(losses[side], 3) - 1])
-        + (planted && side === attack ? 300 : 0)
-        + kills.filter((kill) => kill.side === side).length * 200 / 5)));
       const lane = lanesFor(name, site);
       const opening = {
         Rush: `Attackers group for a fast hit on ${site}.`,
@@ -247,7 +202,7 @@ const ChampionsTactics = (() => {
         Lurk: `The entry group commits to ${site}. The lurker trails the defenders' rotation.`,
       }[plan] || `The entry player goes through first while the second player follows to trade on ${site}.`;
       const round = {
-        number, attack, winner, before, score: [...score], buys, site, alternate, plan, defense, strategy,
+        number, attack, winner, before, score: [...score], site, alternate, plan, defense, strategy,
         finish, planted, postPlant, retake, kills, notes: [
           "Teams buy, move up to their side of the barriers and place eligible setup utility.",
           `${opening} ${defenseOpening}`,
@@ -264,7 +219,6 @@ const ChampionsTactics = (() => {
           ending,
         ],
       };
-      half.push(round);
       return round;
     });
   }
