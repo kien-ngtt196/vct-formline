@@ -1357,6 +1357,18 @@ main { width: min(1480px, 94vw); }
   color: var(--red);
   text-decoration: none;
 }
+.nav-beta {
+  display: inline-block;
+  margin-inline-start: .4em;
+  padding: .12em .45em;
+  border: 1px solid #8f7043;
+  border-radius: 999px;
+  background: #332819;
+  color: #efd08e;
+  font-size: .9em;
+  line-height: 1.1;
+  vertical-align: baseline;
+}
 
 .home-view, .feature-view { width: 100%; }
 .home-view .hero {
