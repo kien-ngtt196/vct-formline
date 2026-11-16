@@ -90,8 +90,36 @@ const ChampionsUtility = (() => {
   }
 
   function playbook(map, original, layout, lane, alternate, lines, roles, points, terrain, offset) {
-    const round = { ...original };
-    const movement = ChampionsMovement.create(map, round, roles, terrain, offset);
+    const round = { ...original, kills: [] };
+    // The score model supplies fight opportunities. The radar resolves who can
+    // actually fight from the positions reached during playback.
+    const pending = original.kills.map((kill) => ({
+      ...kill, phase: Math.min(kill.phase, 3), time: kill.phase === 4 ? .9 : kill.time,
+    }));
+    function resolveContact(phase, time, positions, canShoot) {
+      const last = round.kills.at(-1);
+      if (last?.phase === phase && time - last.time < .06) return;
+      for (const [requestIndex, request] of pending.entries()) {
+        if (request.phase > phase || (request.phase === phase && request.time > time)) continue;
+        const { side } = request;
+        let best;
+        for (const [killer, origin] of positions[side].entries()) {
+          for (const [victim, impact] of positions[1 - side].entries()) {
+            const cost = Math.hypot(origin[0] - impact[0], origin[1] - impact[1])
+              + (killer === request.killer ? 0 : 4) + (victim === request.victim ? 0 : 4);
+            if ((best && cost >= best.cost) || !canShoot(side, killer, victim)) continue;
+            best = { killer, victim, origin, impact, cost };
+          }
+        }
+        if (!best) continue;
+        const { killer, victim, origin, impact } = best;
+        round.kills.push({ side, killer, victim, phase, time, origin, impact,
+          text: `${lines[side][killer].player.name} eliminated ${lines[1 - side][victim].player.name}` });
+        pending.splice(requestIndex, 1);
+        return;
+      }
+    }
+    const movement = ChampionsMovement.create(map, round, roles, terrain, offset, resolveContact);
     const { main, link, back, target, linkName, backName } = lane;
     const launch = round.plan === "Split" || round.plan === "Mid to" ? link : main;
     const insideEntry = launch.map((value, axis) => value * .65 + target[axis] * .35);
@@ -310,7 +338,8 @@ const ChampionsUtility = (() => {
     }
     perform(3);
     perform(4);
-    return { events: roundEvents, tracks: movement.frames, stopped: movement.stoppedByPhase, planted: round.planted };
+    return { events: roundEvents, kills: round.kills, tracks: movement.frames,
+      stopped: movement.stoppedByPhase, planted: round.planted };
   }
 
   function planRound(map, agents, original, points, terrain = ChampionsMovement.openTerrain, offset = (point) => point) {

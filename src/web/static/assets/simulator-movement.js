@@ -80,7 +80,7 @@ const ChampionsMovement = (() => {
       return Boolean(column >= 0 && row >= 0 && column < size && row < size && field[index(column, row)]);
     };
     function clear(a, b) {
-      const intervals = Math.ceil(distance(a, b));
+      const intervals = Math.ceil(distance(a, b) * 2);
       for (let i = 1; i <= intervals; i++) {
         const sample = a.map((v, axis) => v + (b[axis] - v) * i / intervals);
         if (!contains(sample)) return false;
@@ -122,7 +122,18 @@ const ChampionsMovement = (() => {
       && Math.abs(-x * s + y * c) <= (area.width || 1) / 2 + margin;
   }
 
-  function create(map, round, roles, board, offset) {
+  function shotIsClear(board, from, to, screens, maxRange) {
+    const gap = distance(from, to);
+    if (gap > maxRange || !board.clear(from, to)) return false;
+    const samples = Math.max(1, Math.ceil(gap * 4));
+    for (let index = 0; index <= samples; index++) {
+      const point = from.map((value, axis) => value + (to[axis] - value) * index / samples);
+      if (screens.some((area) => covers(area, point))) return false;
+    }
+    return true;
+  }
+
+  function create(map, round, roles, board, offset, resolveContact) {
     const scale = ChampionsAbilityGeometry.scaleFor(map);
     const tracks = [[], []];
     const frames = [];
@@ -135,13 +146,13 @@ const ChampionsMovement = (() => {
       kill.side !== side && kill.victim === index && (kill.phase < phase || (kill.phase === phase && kill.time <= time)));
     const position = (track) => track.cells[track.cursor];
     const attackRoles = roles[round.attack];
-    const planter = [attackRoles.support, attackRoles.lead, 0, 1, 2, 3, 4]
-      .find((index) => !dead(round.attack, index, 2, 1));
 
     function start(next) {
       phase = next;
       tick = 0;
       stopped = 0;
+      const planter = phase === 2 && [attackRoles.support, attackRoles.lead, 0, 1, 2, 3, 4]
+        .find((index) => !dead(round.attack, index, 2, 0));
       for (const [side, team] of tracks.entries()) {
         for (let index = 0; index < 5; index++) {
           const route = ChampionsTactics.movement(map, round, side, index, roles[side]);
@@ -228,6 +239,15 @@ const ChampionsMovement = (() => {
         }
       }
       stoppedByPhase[phase] = stopped;
+      if (resolveContact && phase > 0 && phase < 4) {
+        const screens = obstacles.filter(({ kind }) => ["smoke", "wall", "barrier"].includes(kind))
+          .map(({ area }) => area);
+        const canShoot = (side, shooter, victim) => living[side][shooter] && living[1 - side][victim]
+          && !events.some((event) => event.side === side && event.index === shooter && event.phase === phase
+            && event.hold && event.time <= time && time < event.time + event.hold)
+          && shotIsClear(board, current[side][shooter], current[1 - side][victim], screens, 35 * scale);
+        resolveContact(phase, time, current, canShoot);
+      }
     }
 
     function moveTo(next, time, events) {
@@ -252,5 +272,5 @@ const ChampionsMovement = (() => {
     const to = track.cells[Math.min(track.cells.length - 1, cell + 1)];
     return { cell, point: from.map((value, i) => value + (to[i] - value) * (position - cell)) };
   }
-  return { terrain, openTerrain, create, playback };
+  return { terrain, openTerrain, create, playback, shotIsClear };
 })();

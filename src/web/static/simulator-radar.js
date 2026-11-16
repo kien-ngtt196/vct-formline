@@ -193,8 +193,9 @@ const ChampionsRadar = (() => {
       while (rounds.length < number) {
         const round = map.timeline[rounds.length];
         if (round.number === 13) points.forEach((team) => team.fill(0));
-        rounds.push(ChampionsUtility.planRound(map, agents, round, points, planner, offset));
-        for (const { side, killer, victim } of round.kills) {
+        const simulation = ChampionsUtility.planRound(map, agents, round, points, planner, offset);
+        rounds.push(simulation);
+        for (const { side, killer, victim } of simulation.kills) {
           points[side][killer]++;
           points[1 - side][victim]++;
         }
@@ -235,24 +236,28 @@ const ChampionsRadar = (() => {
         loadout.hidden = phase !== 0;
         loadout.textContent = `${gun} (${carried ? "carried" : weaponCost}) · ${shield === "none" ? "no armor" : `${shield} armor (${armorCost})`} · ≈${reserve} for utility`;
       }
-      const visibleKills = round.kills.filter((kill) => kill.phase <= phase);
+      const simulation = planner?.ready ? playbackRound(round.number) : null;
+      const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
       phaseKills = visibleKills.map((kill) => ({
         ...kill, at: kill.phase < phase ? 0 : kill.time,
         entry: node("li", `sim-radar-kill-${order.indexOf(kill.side)}`, kill.text),
       }));
       effects.replaceChildren();
       utility.replaceChildren();
-      if (!planner?.ready) {
+      if (!simulation) {
         prepareCalls(round, phase);
         place(animate ? 0 : 1);
         return;
       }
-      const simulation = playbackRound(round.number);
       roundState = { phase, round: { ...round, planted: simulation.planted } };
       prepareCalls(round, phase, simulation);
       contact.textContent = simulation.stopped[phase] && phase > 0 && phase < 4
         ? "Players hold at contested angles until they find cover or an opening." : "";
-      if (phase >= 3 && round.planted && !simulation.planted) {
+      if (finished && ["hold", "stop", "wipe", "clutch", "defuse"].includes(round.finish)) {
+        narrative.textContent = `${teams[round.winner].name} take round ${round.number}.`;
+      } else if (phase === 3 && round.finish === "clutch" && simulation.planted) {
+        narrative.textContent = `The spike is down on ${round.site}. The defenders look for a retake.`;
+      } else if (phase === 3 && round.planted && !simulation.planted) {
         narrative.textContent = "The hit stalls before the Spike can go down.";
       }
       const lane = ChampionsTactics.lanesFor(map.name, round.site);
@@ -336,6 +341,17 @@ const ChampionsRadar = (() => {
       context.translate(200, 200);
       context.rotate(rotation * Math.PI / 2);
       context.translate(-200, -200);
+      for (const { at, origin, impact, side } of phaseKills) {
+        if (at === 0 || progress < at || progress > at + .12 || progress === 1) continue;
+        context.strokeStyle = colors[order.indexOf(side)];
+        context.globalAlpha = 1 - (progress - at) / .12;
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(origin[0] * 4, origin[1] * 4);
+        context.lineTo(impact[0] * 4, impact[1] * 4);
+        context.stroke();
+      }
+      context.globalAlpha = 1;
       if (roundState.phase === 0) {
         context.lineWidth = 2;
         context.setLineDash([4, 3]);

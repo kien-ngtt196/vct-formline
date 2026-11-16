@@ -67,14 +67,16 @@ assert.ok(!havenSplit.some((r) => r.attack && !r.entry && !r.wall && r.spot.name
 // must reserve two smokes, while an early Omen smoke can recharge before the hit.
 const agents = { omen: { role: 'Controller' }, brimstone: { role: 'Controller' },
   jett: { role: 'Duelist' }, sova: { role: 'Initiator' }, killjoy: { role: 'Sentinel' }, sage: { role: 'Sentinel' } };
-function simulation(controller, mapName = 'Lotus') {
+function simulateRound(controller, mapName, terrain, changes = {}) {
   const stats = [0, 1].map((side) => [controller, 'jett', 'sova', 'killjoy', 'sage']
     .map((agent, i) => ({ agent, player: { name: `${side}-${i}` } })));
   const round = { ...base, attack: 0, winner: 0, plan: 'Fake', planted: false, kills: [],
-    buys: [0, 1].map(() => ({ label: 'Full buy', utility: 850 })) };
+    buys: [0, 1].map(() => ({ label: 'Full buy', utility: 850 })), ...changes };
   return utility.planRound({ name: mapName, stats }, agents, round,
-    stats.map(() => [0, 0, 0, 0, 0]), movement.openTerrain).events;
+    stats.map(() => [0, 0, 0, 0, 0]), terrain);
 }
+const simulation = (controller, mapName = 'Lotus') =>
+  simulateRound(controller, mapName, movement.openTerrain).events;
 for (const mapName of Object.keys(tactics.layouts)) {
   for (const event of simulation('omen', mapName)) {
     assert.ok(event.landing.every(Number.isFinite), `${mapName}: finite landing`);
@@ -87,3 +89,28 @@ assert.equal(omen.filter((e) => e.phase === 2).length, 2, 'Omen retains two exec
 const brim = simulation('brimstone').filter((e) => e.side === 0 && e.name === 'Sky Smoke');
 assert.ok(brim.length <= 3, 'Brimstone respects his charge limit');
 console.log(`Passed ${checked} smoke aperture checks, scenario checks, and seven-map utility smoke tests.`);
+
+// Playback must wait for a visible encounter, even when the result model has
+// already scheduled a kill. Check map geometry and vision-blocking utility.
+const { openTerrain, shotIsClear } = movement;
+const blocked = { ...openTerrain, clear: () => false };
+const smokeScreen = { shape: 'circle', center: [10, 0], radius: 2 };
+const wallScreen = { shape: 'line', center: [10, 0], angle: Math.PI / 2, length: 6 };
+assert.ok(shotIsClear(openTerrain, [0, 0], [20, 0], [], 25));
+assert.ok(!shotIsClear(openTerrain, [0, 0], [90, 0], [], 25));
+assert.ok(!shotIsClear(blocked, [0, 0], [20, 0], [], 25));
+for (const screen of [smokeScreen, wallScreen]) {
+  assert.ok(!shotIsClear(openTerrain, [0, 0], [20, 0], [screen], 25));
+}
+const planned = { phase: 1, time: .66, side: 0, killer: 0, victim: 0 };
+const round = { plan: 'Rush', kills: [planned] };
+const fight = simulateRound('omen', 'Lotus', openTerrain, round);
+assert.equal(fight.kills.length, 1, 'a nearby opponent can still be eliminated');
+const [kill] = fight.kills;
+assert.ok(shotIsClear(openTerrain, kill.origin, kill.impact, [], 35 * geometry.scaleFor('Lotus')));
+const track = fight.tracks[kill.phase][1 - kill.side][kill.victim];
+assert.deepEqual(movement.playback(track, kill.time).point, kill.impact);
+assert.deepEqual(movement.playback(track, 1).point, kill.impact, 'victim stops at the shot location');
+assert.equal(simulateRound('omen', 'Lotus', blocked, round).kills.length, 0,
+  'a scheduled kill does not enter the feed without sight');
+assert.equal(planned.time, .66, 'planning a replay leaves the original result intact');

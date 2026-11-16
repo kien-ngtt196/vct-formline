@@ -88,7 +88,7 @@ const ChampionsCommentary = (() => {
     const alive = stats.map((team) => new Set(team.map((_, i) => i)));
     const kills = stats.map((team) => team.map(() => 0));
     let prior;
-    for (const kill of round.kills) {
+    for (const kill of simulation?.kills || []) {
       const enemy = 1 - kill.side;
       const already = alive[enemy].size;
       alive[enemy].delete(kill.victim);
@@ -112,14 +112,14 @@ const ChampionsCommentary = (() => {
     }
 
     if (phase === 4) {
-      const at = Math.max(.05, ...round.kills.filter((kill) => kill.phase === 4).map((kill) => kill.time + .08));
+      const at = .05;
       const winner = first(names[round.winner]);
       const score = `${round.score[round.winner]}–${round.score[1 - round.winner]}`;
       let outcome;
-      if (simulation?.planted && ["defuse", "detonate", "hold", "clutch"].includes(round.finish)) {
+      if (simulation?.planted && ["defuse", "detonate", "hold"].includes(round.finish)) {
         outcome = round.finish === "defuse" ? `The retake is complete. ${winner} get the defuse.`
           : round.finish === "detonate" ? `The spike goes off. ${winner} take the round.`
-            : round.finish === "clutch" ? `Clutch secured for ${winner}.` : `${winner} hold the post-plant.`;
+            : `${winner} hold the post-plant.`;
       } else if (round.finish === "save" && (!round.planted || simulation?.planted)) {
         outcome = `${first(names[1 - round.winner])} save what they can. The round goes to ${winner}.`;
       } else {
