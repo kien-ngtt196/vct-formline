@@ -78,9 +78,7 @@ const ChampionsRadar = (() => {
     const alive = node("p", "sim-radar-alive");
     const effects = node("ol", "sim-radar-ability-feed");
     effects.setAttribute("aria-label", "Utility timeline for this phase");
-    const feed = node("ol", "sim-radar-feed");
-    feed.setAttribute("aria-label", "Eliminations this round");
-    asides.append(plan, stage, alive, narrative, contact, effects, feed);
+    asides.append(plan, stage, alive, narrative, contact, effects);
     sidebars.append(asides, commentary.panel);
     const radar = node("img", "sim-radar-image");
     radar.alt = "";
@@ -241,8 +239,7 @@ const ChampionsRadar = (() => {
       phaseShots = (simulation?.shots || []).filter((shot) => shot.phase === phase);
       const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
       phaseKills = visibleKills.map((kill) => ({
-        ...kill, at: kill.phase < phase ? 0 : kill.time,
-        entry: node("li", `sim-radar-kill-${order.indexOf(kill.side)}`, kill.text),
+        side: kill.side, at: kill.phase < phase ? 0 : kill.time,
       }));
       effects.replaceChildren();
       utility.replaceChildren();
@@ -311,12 +308,8 @@ const ChampionsRadar = (() => {
       place(animate && !reducedMotion ? 0 : 1);
     }
 
-    function showKills(progress) {
+    function showAliveCount(progress) {
       const happened = phaseKills.filter(({ at }) => at <= progress);
-      const visible = happened.slice(-4).reverse().map(({ entry }) => entry);
-      if (visible.length !== feed.children.length || visible[0] !== feed.firstElementChild) {
-        feed.replaceChildren(...visible);
-      }
       const remaining = order.map((side) => 5 - happened.filter((kill) => kill.side !== side).length);
       const count = `${remaining.join(" vs ")} alive`;
       if (alive.textContent !== count) alive.textContent = count;
@@ -336,7 +329,7 @@ const ChampionsRadar = (() => {
 
     function place(progress) {
       showClock(progress);
-      showKills(progress);
+      showAliveCount(progress);
       showCommentary(progress);
       if (!planner?.ready) return;
       context.clearRect(0, 0, 400, 400);

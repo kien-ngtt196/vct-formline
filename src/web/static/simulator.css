@@ -427,9 +427,6 @@ body:has(.sim-page:not([hidden])) {
 .sim-radar-detail p { margin: 0; }
 .sim-radar-stage { color: #ffda91; }
 .sim-radar-alive { color: #a8c5cb; font-variant-numeric: tabular-nums; }
-.sim-radar-feed { margin: 2px 0 0; padding: 0; display: grid; gap: 4px; list-style: none; }
-.sim-radar-feed li { padding-left: 6px; border-left: 2px solid var(--radar-left); overflow-wrap: anywhere; }
-.sim-radar-feed .sim-radar-kill-1 { border-color: var(--radar-right); }
 .sim-radar-controls { margin-bottom: 12px; }
 .sim-radar-controls select { width: auto; padding: 5px; }
 .sim-radar-timeline { flex: 1 1 95px; min-width: 0; accent-color: var(--sim-gold, #efd08e); }
