@@ -351,27 +351,14 @@ const ChampionsRadar = (() => {
           if (!cones.has(cell)) {
             cones.set(cell, ChampionsMovement.sightCone(planner, map.name, track, vision, side, index, progress));
           }
-          const { point, rays, blind, angle } = cones.get(cell);
+          const { rays, blind } = cones.get(cell);
           const [x, y] = ChampionsMovement.playback(track, progress).point.map((value) => value * 4);
           context.beginPath();
           context.moveTo(x, y);
           for (const [rx, ry] of rays) context.lineTo(rx * 4, ry * 4);
           context.closePath();
-          context.fillStyle = colors[order.indexOf(side)] + "1c";
+          context.fillStyle = blind ? "#efd08e33" : colors[order.indexOf(side)] + "1c";
           context.fill();
-          const blocked = rays.every(([rx, ry]) => Math.hypot(rx - point[0], ry - point[1]) < 3);
-          const edges = blind || blocked ? [-1, 1].map((sign) => [
-            x + 16 * Math.cos(angle + sign * Math.PI / 6), y + 16 * Math.sin(angle + sign * Math.PI / 6),
-          ]) : [rays[0], rays.at(-1)].map(([rx, ry]) => [rx * 4, ry * 4]);
-          context.beginPath();
-          context.moveTo(...edges[0]);
-          context.lineTo(x, y);
-          context.lineTo(...edges[1]);
-          context.lineWidth = 1.2;
-          context.strokeStyle = blind ? "#efd08e" : colors[order.indexOf(side)] + "a8";
-          if (blind || blocked) context.setLineDash([2, 3]);
-          context.stroke();
-          context.setLineDash([]);
         }
       }
       for (const { time: at, origin, impact, side } of phaseShots) {
