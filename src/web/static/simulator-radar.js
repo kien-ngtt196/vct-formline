@@ -76,9 +76,9 @@ const ChampionsRadar = (() => {
     const narrative = node("p");
     const contact = node("p", "sim-muted");
     const alive = node("p", "sim-radar-alive");
-    const effects = node("ol", "sim-radar-ability-feed");
-    effects.setAttribute("aria-label", "Utility timeline for this phase");
-    asides.append(plan, stage, alive, narrative, contact, effects);
+    const feed = node("ol", "sim-radar-feed");
+    feed.setAttribute("aria-label", "Eliminations this round");
+    asides.append(plan, stage, alive, narrative, contact, feed);
     sidebars.append(asides, commentary.panel);
     const radar = node("img", "sim-radar-image");
     radar.alt = "";
@@ -240,8 +240,8 @@ const ChampionsRadar = (() => {
       const visibleKills = (simulation?.kills || []).filter((kill) => kill.phase <= phase);
       phaseKills = visibleKills.map((kill) => ({
         side: kill.side, at: kill.phase < phase ? 0 : kill.time,
+        entry: node("li", `sim-radar-kill-${order.indexOf(kill.side)}`, kill.text),
       }));
-      effects.replaceChildren();
       utility.replaceChildren();
       if (!simulation) {
         prepareCalls(round, phase);
@@ -275,23 +275,19 @@ const ChampionsRadar = (() => {
       throws = [...setup.map((event) => ({ ...event, time: 0, carried: true })), ...carriedSmokes, ...events].map((event) => {
         const { side, kind, landing, color, player, agent, name, area, purpose, delivery, origin } = event;
         const marker = node("span", `sim-radar-utility sim-radar-${kind}`);
-        marker.style.setProperty("--ability-color", color);
+        const outline = colors[order.indexOf(side)];
+        marker.style.setProperty("--ability-outline", outline);
         marker.append(makeIcon(event));
         utility.append(marker);
-        const description = node("li", `sim-radar-kill-${order.indexOf(side)}`);
         const footprint = phase === 0 || event.carried ? null
           : ChampionsAbilityGeometry.footprint(map.name, name, origin, landing);
         const detail = [area, event.smokeTiming && event.phase < phase ? "carried from the previous phase" : purpose,
           footprint?.dimensions, event.refilled ? "recharged" : null,
           event.cost ? `${event.cost} credits` : null].filter(Boolean).join(" · ");
-        const copy = node("span");
-        copy.append(node("strong", "", `${player.name} · ${name}`), node("small", "", detail));
-        description.append(makeIcon(event), copy);
-        effects.append(description);
-        marker.title = `${agents[agent].name} · ${name} · ${detail}`;
+        marker.title = `${player.name} · ${agents[agent].name} · ${name} · ${detail}`;
         placeOnMap(marker, footprint?.center || landing);
         const path = event.path || (delivery === "guided" ? planner.navigate(origin, landing) : null);
-        return { ...event, marker, path, footprint, description };
+        return { ...event, marker, path, footprint, outline };
       });
       spike.hidden = !simulation.planted || phase !== 3;
       placeOnMap(spike, planner.snap(ChampionsTactics.spikePosition(lane, round)));
@@ -308,8 +304,12 @@ const ChampionsRadar = (() => {
       place(animate && !reducedMotion ? 0 : 1);
     }
 
-    function showAliveCount(progress) {
+    function showEliminations(progress) {
       const happened = phaseKills.filter(({ at }) => at <= progress);
+      const visible = happened.slice(-4).reverse().map(({ entry }) => entry);
+      if (visible.length !== feed.children.length || visible[0] !== feed.firstElementChild) {
+        feed.replaceChildren(...visible);
+      }
       const remaining = order.map((side) => 5 - happened.filter((kill) => kill.side !== side).length);
       const count = `${remaining.join(" vs ")} alive`;
       if (alive.textContent !== count) alive.textContent = count;
@@ -329,7 +329,7 @@ const ChampionsRadar = (() => {
 
     function place(progress) {
       showClock(progress);
-      showAliveCount(progress);
+      showEliminations(progress);
       showCommentary(progress);
       if (!planner?.ready) return;
       context.clearRect(0, 0, 400, 400);
@@ -383,7 +383,7 @@ const ChampionsRadar = (() => {
         context.setLineDash([]);
       }
       const seconds = ChampionsSmokes.now(roundState.round, roundState.phase, progress);
-      for (const { marker, origin, landing, path, color, time, delivery, kind, footprint, description, hold, carried,
+      for (const { marker, origin, landing, path, color, time, delivery, kind, footprint, outline, hold, carried,
         phase, smokeTiming } of throws) {
         const travelTime = ChampionsMovement.travelTime({ hold, delivery });
         const arrival = ChampionsMovement.arrivalTime({ time, hold, delivery });
@@ -394,8 +394,7 @@ const ChampionsRadar = (() => {
         const visible = arrived && (smokeTiming ? seconds < smokeTiming.ends
           : lingering || progress < arrival + .27 || progress === 1);
         marker.classList.toggle("is-landing", visible);
-        description.classList.toggle("is-pending", !active);
-        if (visible && footprint) ChampionsAbilityGeometry.draw(context, footprint, color, kind);
+        if (visible && footprint) ChampionsAbilityGeometry.draw(context, footprint, color, kind, outline);
         if (!active || delivery === "cast" || arrived && delivery !== "move") continue;
         if (delivery === "move" && progress > time + .16) continue;
         const fraction = smokeTiming ? Math.min(1, (seconds - castTime) / (smokeTiming.starts - castTime))

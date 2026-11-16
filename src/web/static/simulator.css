@@ -331,7 +331,7 @@ body:has(.sim-page:not([hidden])) {
   place-items: center;
   width: clamp(9px, 3.15%, 15px);
   aspect-ratio: 1;
-  border: 1px solid var(--ability-color);
+  border: 1px solid var(--ability-outline);
   border-radius: 3px;
   background: #101d25d9;
   opacity: 0;
@@ -345,29 +345,9 @@ body:has(.sim-page:not([hidden])) {
   object-fit: contain;
   filter: drop-shadow(0 1px 3px #000);
 }
-.sim-radar-ability-feed {
-  display: grid;
-  gap: 3px;
-  margin: 2px 0;
-  padding: 0;
-  list-style: none;
-  max-height: 220px;
-  overflow: auto;
-}
-.sim-radar-ability-feed:empty { display: none; }
-.sim-radar-ability-feed li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 5px;
-  background: var(--radar-panel);
-  border-inline-start: 2px solid var(--radar-left);
-}
-.sim-radar-ability-feed .sim-radar-kill-1 { border-color: var(--radar-right); }
-.sim-radar-ability-feed li.is-pending { opacity: .35; }
-.sim-radar-ability-feed .sim-radar-ability-icon { width: 16px; flex: none; }
-.sim-radar-ability-feed strong, .sim-radar-ability-feed small { display: block; }
-.sim-radar-ability-feed small { color: #c3b49e; }
+.sim-radar-feed { margin: 2px 0 0; padding: 0; display: grid; gap: 4px; list-style: none; }
+.sim-radar-feed li { padding-left: 6px; border-left: 2px solid var(--radar-left); overflow-wrap: anywhere; }
+.sim-radar-feed .sim-radar-kill-1 { border-color: var(--radar-right); }
 .sim-radar-spike {
   display: grid;
   place-items: center;

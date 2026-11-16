@@ -70,7 +70,7 @@ const ChampionsAbilityGeometry = (() => {
     return null;
   }
 
-  function draw(context, area, color, kind) {
+  function draw(context, area, color, kind, outline = color) {
     context.save();
     context.translate(area.center[0] * 4, area.center[1] * 4);
     context.rotate(area.angle || 0);
@@ -87,7 +87,7 @@ const ChampionsAbilityGeometry = (() => {
       context.fillStyle = color + (kind === "smoke" ? "48" : "24");
       context.fill();
     }
-    context.strokeStyle = color + "c0";
+    context.strokeStyle = outline + "c0";
     context.lineWidth = area.shape === "line" ? 1.6 : 1;
     if (kind === "recon") context.setLineDash([3, 3]);
     context.stroke();
