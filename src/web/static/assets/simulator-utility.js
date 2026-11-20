@@ -137,8 +137,8 @@ const ChampionsUtility = (() => {
   function settleRound(round, buys, replay) {
     return buys.map((buy, side) => {
       const losses = side === round.winner ? 0 : buy.losses + 1;
-      const detonated = replay.planted && round.winner === round.attack
-        && ["detonate", "save"].includes(round.finish);
+      const detonated = replay.ended?.reason === "detonation" || (!replay.ended && replay.planted
+        && round.winner === round.attack && ["detonate", "save"].includes(round.finish));
       const players = buy.players.map((player, index) => {
         const survived = !replay.kills.some((kill) => kill.side !== side && kill.victim === index);
         const kills = replay.kills.filter((kill) => kill.side === side && kill.killer === index).length;
@@ -176,22 +176,45 @@ const ChampionsUtility = (() => {
     const round = { ...original, kills: [] };
     const shots = [];
     const misses = new Set();
+    let defuse;
+    const spike = terrain.snap(ChampionsTactics.spikePosition(lane, round));
+    const living = (side, index) => !round.kills.some((kill) => kill.side !== side && kill.victim === index);
     function resolveContact(phase, time, positions, canShoot) {
+      if (phase === 3 && round.planted && (round.skirmish || round.winner !== round.attack) && spike) {
+        const side = 1 - round.attack;
+        const inReach = (index) => living(side, index)
+          && Math.hypot(...positions[side][index].map((value, axis) => value - spike[axis])) <= 2.5 * scale;
+        if (defuse && !inReach(defuse.index)) defuse = null;
+        if (!defuse) {
+          const index = positions[side].findIndex((_, index) => inReach(index));
+          if (index >= 0) defuse = { index, start: time };
+        }
+        round.defusing = defuse?.index;
+        if (defuse && (time - defuse.start) * ChampionsTactics.phaseDuration(round, phase) >= 7) {
+          round.ended = { phase, time, reason: "defuse", winner: side };
+          return;
+        }
+      }
       const last = shots.at(-1);
       if (last?.phase === phase && time - last.time < .04) return;
-      const winnerAlone = round.kills.filter(({ side }) => side !== round.winner).length === 4;
+      const winnerAlone = !round.skirmish && round.kills.filter(({ side }) => side !== round.winner).length === 4;
       let best;
-      for (const side of [round.winner, 1 - round.winner]) {
+      for (const side of round.skirmish ? [round.attack, 1 - round.attack] : [round.winner, 1 - round.winner]) {
         // The bracket has already resolved the round. The last player on the
         // winning side can take fire, but cannot be eliminated in the replay.
         const miss = winnerAlone && side !== round.winner;
         for (const [killer, origin] of positions[side].entries()) {
+          if (phase === 3 && side !== round.attack && killer === defuse?.index) continue;
           for (const [victim, impact] of positions[1 - side].entries()) {
             const key = `${phase}:${side}:${killer}:${victim}`;
             if (miss && misses.has(key)) continue;
             const skill = lines[side][killer].player.skill ?? .5;
-            const cost = Math.hypot(origin[0] - impact[0], origin[1] - impact[1]) - skill * 8
-              + (side === round.winner ? 0 : 1);
+            const gap = Math.hypot(origin[0] - impact[0], origin[1] - impact[1]);
+            const gun = round.buys[side].players[killer].gun;
+            const firepower = round.skirmish ? (isRifle(gun) ? 3 : gunPrices[gun] >= 1100 && gap <= 14 * scale ? 2 : 0)
+              + shieldPrices[round.buys[side].players[killer].shield] / 500 : 0;
+            const reaction = round.skirmish ? round.skirmish.random() * 7 : 0;
+            const cost = gap - skill * 8 - firepower + reaction + (round.skirmish || side === round.winner ? 0 : 1);
             if ((best && cost >= best.cost) || !canShoot(side, killer, victim)) continue;
             best = { side, killer, victim, origin, impact, cost, miss, key };
           }
@@ -205,6 +228,10 @@ const ChampionsUtility = (() => {
       else {
         round.kills.push({ ...shot,
           text: `${lines[side][killer].player.name} eliminated ${lines[1 - side][victim].player.name}` });
+        if (round.kills.filter((kill) => kill.side === side).length === 5
+          && (side === round.attack || phase < 3 || !round.planted)) {
+          round.ended = { phase, time, reason: "elimination", winner: side };
+        }
       }
       return shot;
     }
@@ -272,6 +299,11 @@ const ChampionsUtility = (() => {
             if (available < smoke.reserve) return [];
           }
           let destination = landing;
+          const placement = round.skirmish?.castPreference?.[side === attack ? "attack" : "defense"];
+          if (phase === 2 && ["flash", "disrupt", "denial", "recon"].includes(kind)) {
+            if (placement === "entry edge") destination = insideEntry;
+            if (placement === "connector") destination = link;
+          }
           if (smoke) destination = ChampionsSmokes.placement(map, name, smoke.spot, origin, terrain);
           else if (phase === 0) destination = terrain.setup(name, origin, side === defend ? main : lane.staging, usedBy[side][index]);
           else if (name === "Trapwire") {
@@ -301,7 +333,10 @@ const ChampionsUtility = (() => {
             refilled, hold, path }];
         });
       });
-      candidates.sort((a, b) => a.priority - b.priority
+      const choice = round.skirmish?.castPreference?.[side === attack ? "attack" : "defense"];
+      const cost = (candidate) => candidate.priority + (choice === "nearby" ? candidate.distance / 18
+        : choice === "role" && candidate.index === preferred ? -2 : 0);
+      candidates.sort((a, b) => cost(a) - cost(b)
         || Number(b.index === preferred) - Number(a.index === preferred)
         || usedBy[side][a.index] - usedBy[side][b.index] || a.distance - b.distance);
       const event = candidates[0];
@@ -333,8 +368,13 @@ const ChampionsUtility = (() => {
       });
     }
 
-    const a = (phase, time, ...rest) => requests.push({ side: attack, phase, time, rest });
-    const d = (phase, time, ...rest) => requests.push({ side: defend, phase, time, rest });
+    function queue(side, phase, time, rest) {
+      const timing = round.skirmish?.utilityTiming?.[side === attack ? "attack" : "defense"] || 0;
+      const adjusted = phase === 0 ? time : Math.max(.02, Math.min(.95, time + timing));
+      requests.push({ side, phase, time: adjusted, rest });
+    }
+    const a = (phase, time, ...rest) => queue(attack, phase, time, rest);
+    const d = (phase, time, ...rest) => queue(defend, phase, time, rest);
     function smokeRequests(phase, context) {
       for (const smoke of ChampionsSmokes.uses(map, round, context)) {
         (smoke.attack ? a : d)(phase, smoke.time, kinds(smoke.wall ? "wall" : "smoke"),
@@ -344,6 +384,7 @@ const ChampionsUtility = (() => {
     function perform(phase) {
       for (const request of requests.filter((item) => item.phase === phase).sort((a, b) => a.time - b.time)) {
         movement.moveTo(phase, request.time, roundEvents);
+        if (round.ended) break;
         if (request.setup) {
           const setup = request.setup;
           const alive = !round.kills.some((kill) => kill.side === attack && kill.victim === setup.index
@@ -368,7 +409,8 @@ const ChampionsUtility = (() => {
     const midPush = round.defense === "Fight mid";
     const aggressive = round.defense === "Take space" || midPush;
     const earlyFight = aggressive || round.defense === "Delay" || fast;
-    a(1, .10, kinds("recon", "clear", "flash"), openingTarget, openingName, roles[attack].support);
+    a(1, .10, kinds("recon", "clear", "flash"),
+      openingTarget, openingName, roles[attack].support);
     d(1, .12, aggressive ? kinds("recon", "clear", "flash") : kinds("trap", "recon"),
       midPush ? layout.mid : main, midPush ? "mid" : `${round.site} main`, roles[defend].support);
     if (earlyFight) {
@@ -407,11 +449,15 @@ const ChampionsUtility = (() => {
 
     perform(1);
     perform(2);
-    const plant = terrain.snap(ChampionsTactics.spikePosition(lane, round));
     if (round.planted) {
-      const inPlantZone = lines[attack].some((_, index) =>
+      const inPlantZone = !round.ended && spike && lines[attack].some((_, index) =>
         !round.kills.some((kill) => kill.side === defend && kill.victim === index && kill.phase <= 2)
-        && Math.hypot(...movement.position(attack, index).map((value, axis) => value - plant[axis])) <= 6 * scale);
+        && Math.hypot(...movement.position(attack, index).map((value, axis) => value - spike[axis])) <= 6 * scale
+        && (!round.skirmish || [0, 1, 2, 3, 4].every((second) => {
+          const progress = 1 - second / ChampionsTactics.phaseDuration(round, 2);
+          const { point } = ChampionsMovement.playback(movement.frames[2][attack][index], progress);
+          return Math.hypot(point[0] - spike[0], point[1] - spike[1]) <= 3 * scale;
+        })));
       if (!inPlantZone) {
         round.planted = false;
         round.postPlant = null;
@@ -426,9 +472,13 @@ const ChampionsUtility = (() => {
       a(3, .56, kinds("flash", "denial"), back, backName);
     }
     perform(3);
+    if (round.skirmish && !round.ended) {
+      round.ended = { phase: 3, time: 1, reason: round.planted ? "detonation" : "time",
+        winner: round.planted ? attack : defend };
+    }
     perform(4);
     return { events: roundEvents, kills: round.kills, shots, unusedCharges, tracks: movement.frames, vision: movement.vision,
-      stopped: movement.stoppedByPhase, planted: round.planted };
+      stopped: movement.stoppedByPhase, planted: round.planted, ended: round.ended, defuse };
   }
 
   function planRound(map, agents, original, points, terrain = ChampionsMovement.openTerrain, offset = (point) => point) {

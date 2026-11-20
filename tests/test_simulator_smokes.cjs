@@ -17,6 +17,7 @@ let checked = 0;
 for (const [map, layout] of Object.entries(tactics.layouts)) {
   for (const site of Object.keys(layout.sites)) {
     const alternate = Object.keys(layout.sites).find((letter) => letter !== site);
+    assert.ok(smoke.uses(map, { ...base, site, alternate }, 'execute').some(r => r.attack && !r.wall && !r.entry), map + ' ' + site);
     for (const plan of plans) {
       for (const phase of ['opening', 'execute', 'postplant']) {
         for (const request of smoke.uses(map, { ...base, site, alternate, plan }, phase)) {
@@ -60,6 +61,12 @@ assert.ok(fake.reserve >= 1 && fake.neededBy > smoke.now(base, 1, fake.time));
 const rush = requests({ plan: 'Rush' }, 'execute').find((r) => r.attack);
 assert.ok(rush.time < requests({}, 'execute').find((r) => r.attack).time);
 // A split through Garage must not seal the friendly connector group off.
+const smokePolicy = { A: { execute: 'early', fake: 'alternate', defense: 'early', retake: 'early' } };
+const early = requests({ skirmish: { smokePolicy } }, 'execute');
+assert.ok(early.find(r => r.attack && !r.wall && !r.entry).time < requests({}, 'execute').find(r => r.attack).time);
+assert.ok(early.find(r => !r.attack).time < requests({}, 'execute').find(r => !r.attack).time);
+assert.ok(!requests({ plan: 'Fake', skirmish: { smokePolicy } }, 'opening').some(r => r.attack));
+assert.ok(requests({ postPlant: 'Open plant', skirmish: { smokePolicy } }).find(r => !r.attack).time < defuse.time);
 const havenSplit = smoke.uses('Haven', { ...base, site: 'C', plan: 'Split' }, 'execute');
 assert.ok(!havenSplit.some((r) => r.attack && !r.entry && !r.wall && r.spot.name.includes('Garage')));
 
@@ -79,7 +86,7 @@ function simulateRound(controller, mapName, terrain, changes = {}) {
     stats.map(() => [0, 0, 0, 0, 0]), terrain);
 }
 const simulation = (controller, mapName = 'Lotus') =>
-  simulateRound(controller, mapName, movement.openTerrain).events;
+  simulateRound(controller, mapName, { ...movement.openTerrain, clear: () => false }).events;
 for (const mapName of Object.keys(tactics.layouts)) {
   for (const event of simulation('omen', mapName)) {
     assert.ok(event.landing.every(Number.isFinite), `${mapName}: finite landing`);
@@ -91,7 +98,7 @@ assert.ok(omen.some((e) => e.phase === 1), 'Omen sells an early fake');
 assert.equal(omen.filter((e) => e.phase === 2).length, 2, 'Omen retains two execute smokes');
 const brim = simulation('brimstone').filter((e) => e.side === 0 && e.name === 'Sky Smoke');
 assert.ok(brim.length <= 3, 'Brimstone respects his charge limit');
-console.log(`Passed ${checked} smoke aperture checks, scenario checks, and seven-map utility smoke tests.`);
+console.log(`Passed ${checked} smoke aperture checks, scenario checks, and utility smoke tests.`);
 
 // Combat follows the replay sightline, even with no scheduled result-model kills.
 const { openTerrain, shotIsClear } = movement;
@@ -162,3 +169,27 @@ assert.ok(halftime[0].players.every((player) => player.credits === 800 && !playe
 const overtime = utility.buyRound(rosters, { number: 26 }, saved);
 assert.equal(overtime[0].label, 'Overtime buy');
 assert.ok(overtime[0].players.every((player) => player.credits === 5000 && !player.carried && !player.carriedCharges));
+
+const wipe = simulateRound('omen', 'Lotus', movement.openTerrain, {
+  plan: 'Fake', planted: true, postPlant: 'Crossfire', finish: 'wipe',
+});
+assert.equal(wipe.ended?.reason, 'elimination');
+assert.ok(wipe.ended.phase < 3 && !wipe.planted, 'a pre-plant wipe prevents the plant and post-plant');
+assert.equal(wipe.kills.at(-1).time, wipe.ended.time);
+assert.ok(wipe.events.every(({ phase, time }) => phase < wipe.ended.phase
+  || (phase === wipe.ended.phase && time <= wipe.ended.time)), 'no casts occur after resolution');
+const onSite = { ...movement.openTerrain, clear: () => false, navigate: () => [[86, 31]] };
+const defused = simulateRound('omen', 'Lotus', onSite, {
+  winner: 1, planted: true, finish: 'defuse', postPlant: 'Crossfire',
+});
+assert.equal(defused.ended?.reason, 'defuse');
+assert.equal(defused.ended.phase, 3);
+const defuseSeconds = (defused.ended.time - defused.defuse.start) * 45;
+assert.ok(defuseSeconds >= 7 && defuseSeconds < 8, 'defuse resolves after seven seconds of contact');
+for (const map of Object.keys(tactics.layouts)) {
+  for (const side of ['attack', 'defense']) {
+    const segments = tactics.buyBarriers[map][side];
+    assert.ok(segments.length >= 3 && segments.every((segment) => segment.length === 4
+      && segment.every((value) => value > 0 && value < 100)));
+  }
+}

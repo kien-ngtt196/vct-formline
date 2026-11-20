@@ -350,7 +350,8 @@
         candidates = candidates.filter((team) => !rejected.has(team.id));
       }
       groupName = run.groups.find((group) => group.teams.includes(model.userId)).name;
-      next = model.advance(catalog, run);
+      loadingPanel("Simulating the group stage with trained bots�");
+      next = await model.advanceTactical(catalog, run, simulateTournamentMap);
       renderRun();
     } catch (error) {
       run = null;
@@ -744,7 +745,19 @@
     });
   }
 
-  function watchRounds(map, result) {
+  async function watchRounds(map, result) {
+    if (!map.replays && map.setup) {
+      try {
+        map = await simulateTournamentMap(map.setup, result.sides.map(id => run.teams[id]), { replay: true });
+      } catch (error) {
+        const dialog = node("dialog");
+        dialog.append(node("p", "", error.message), button("Close", () => dialog.close()));
+        dialog.addEventListener("close", () => dialog.remove(), { once: true });
+        document.body.append(dialog);
+        dialog.showModal();
+        return;
+      }
+    }
     const dialog = node("dialog", "sim-radar-dialog");
     const radar = makeRadar(map, result, () => dialog.close());
     radar.heading.id = "sim-radar-title";
@@ -778,6 +791,25 @@
     return card;
   }
 
+  const tacticalMaps = new Map();
+  async function simulateTournamentMap(setup, teams, { replay = false, progress } = {}) {
+    const { name } = setup;
+    if (!tacticalMaps.has(name)) {
+      const suffix = name === "Sunset" ? "" : `-${name.toLowerCase()}`;
+      const image = new Image();
+      image.src = `/vct-images/radar/${name.toLowerCase()}.png`;
+      const load = Promise.all([image.decode(), getJson(`/assets/skirmish-weights${suffix}.json?v=champions1`)])
+        .then(([, policyBundle]) => ({ terrain: ChampionsRadar.routePlanner(image, name), policyBundle }));
+      tacticalMaps.set(name, load);
+      load.catch(() => tacticalMaps.delete(name));
+    }
+    const options = await tacticalMaps.get(name);
+    const map = await SkirmishSim.play({ ...setup, ...options, agentCatalog: catalog.agents,
+      tournamentTeams: teams, progress, yieldRound: () => pause(0) });
+    if (replay) return map;
+    return { name: map.name, rounds: map.rounds, timeline: map.timeline.map(({ kills }) => ({ kills })) };
+  }
+
   async function playNext() {
     if (playing || !next) return;
     const fixture = next;
@@ -787,7 +819,9 @@
     const { status, message } = loadingStatus("Drawing maps…");
     center.append(node("h2", "", fixture.title), status);
     try {
-      const result = model.play(catalog, run, fixture);
+      const result = await model.playTactical(catalog, run, fixture, (setup, teams) =>
+        simulateTournamentMap(setup, teams, { replay: true,
+          progress: (round) => { message.textContent = `${setup.name} � Simulating round ${round}�`; } }));
       await pause(650);
       center.append(mapOrder(result.order));
       message.textContent = "Locking agent compositions…";
@@ -813,7 +847,8 @@
       }
       run.results[fixture.id] = result;
       selectedReplay = { fixture, result };
-      next = model.advance(catalog, run);
+      loadingPanel("Simulating the other fixtures�");
+      next = await model.advanceTactical(catalog, run, simulateTournamentMap);
       playing = false;
       renderRun(true);
       if (location.hash === "#simulator") {
@@ -895,6 +930,296 @@
 
   guideHelp.prepend(controlIcon("M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M9.1 9a3 3 0 1 1 4.5 2.6c-1.1.7-1.6 1.3-1.6 2.4m0 3h.01"));
   guideHelp.addEventListener("click", showGuide);
+  const lab = document.querySelector("#skirmish-workspace");
+  let labMounted = false;
+  function openLab() {
+    if (labMounted) return;
+    mountLab();
+    labMounted = true;
+  }
+
+  function labDraft(names, start) {
+    const lineups = [["jett", "sova", "killjoy", "omen", "kayo"], ["raze", "fade", "cypher", "clove", "skye"]];
+    const panel = node("section", "skirmish-draft");
+    panel.append(node("h3", "", "Agent draft"),
+      node("p", "sim-muted", "Pick five agents per team. Your picks determine who enters, who supports, and which abilities each team can buy."));
+    const teams = node("div", "skirmish-draft-teams");
+    panel.append(teams);
+
+    const picker = node("dialog", "sim-radar-dialog skirmish-agent-picker");
+    const header = node("header", "skirmish-picker-header");
+    const title = node("h3");
+    title.id = "skirmish-picker-title";
+    picker.setAttribute("aria-labelledby", title.id);
+    header.append(title, button("Close", () => picker.close()));
+    const search = node("input");
+    search.type = "search";
+    search.placeholder = "Search agents";
+    search.setAttribute("aria-label", "Search agents");
+    const options = node("div", "skirmish-agent-options");
+    picker.append(header, search, options);
+    panel.append(picker);
+
+    let agentCatalog, sortedAgents, selected;
+    const agentTile = (tile, agent) => {
+      const { name, image } = agentCatalog[agent];
+      tile.replaceChildren();
+      addImage(tile, image, "agent-portrait", "");
+      tile.append(node("span", "", name));
+      tile.title = [agentCatalog[agent].role, ...(ChampionsAbilityCatalog[agent] || []).map(ability => ability.name)].join(" � ");
+    };
+    const fillSlot = (tile, side, index) => {
+      const agent = lineups[side][index];
+      agentTile(tile, agent);
+      tile.setAttribute("aria-label", `${names[side]} bot ${index + 1}, ${agentCatalog[agent].name}. Change agent`);
+    };
+    function renderOptions() {
+      const { side, index, tile } = selected;
+      const query = search.value.trim().toLowerCase();
+      const choices = sortedAgents.filter(([, agent]) => agent.name.toLowerCase().includes(query));
+      options.replaceChildren(...choices.map(([agent]) => {
+        const option = button("", () => {
+          lineups[side][index] = agent;
+          fillSlot(tile, side, index);
+          picker.close();
+        }, "sim-button skirmish-agent-tile");
+        agentTile(option, agent);
+        option.disabled = lineups[side].some((pick, slot) => slot !== index && pick === agent);
+        option.setAttribute("aria-pressed", String(lineups[side][index] === agent));
+        return option;
+      }));
+      if (!choices.length) options.append(node("p", "sim-muted", "No matching agents."));
+    }
+    search.addEventListener("input", renderOptions);
+
+    async function loadAgents() {
+      const loading = node("p", "sim-muted", "Loading agent portraits…");
+      loading.setAttribute("role", "status");
+      teams.replaceChildren(loading);
+      start.disabled = true;
+      try {
+        const catalog = await getJson("/vct-images/agents/catalog.json");
+        sortedAgents = Object.entries(catalog).filter(([, agent]) => agent.image)
+          .sort(([, a], [, b]) => a.name.localeCompare(b.name));
+        agentCatalog = Object.fromEntries(sortedAgents);
+        if (sortedAgents.length < 5) throw new Error("Agent portraits are unavailable.");
+        teams.replaceChildren(...lineups.map((lineup, side) => {
+          const group = node("section", `skirmish-draft-team skirmish-draft-team-${side}`);
+          const slots = node("div", "skirmish-draft-slots");
+          lineup.forEach((agent, index) => {
+            if (!agentCatalog[agent]) lineup[index] = sortedAgents.find(([id]) => !lineup.includes(id))[0];
+            const tile = button("", () => {
+              selected = { side, index, tile };
+              title.textContent = `Choose an agent for ${names[side]} bot ${index + 1}`;
+              search.value = "";
+              renderOptions();
+              picker.showModal();
+              search.focus();
+            }, "sim-button skirmish-agent-tile");
+            fillSlot(tile, side, index);
+            slots.append(tile);
+          });
+          group.append(node("h4", "", names[side]), slots);
+          return group;
+        }));
+        start.disabled = false;
+      } catch {
+        teams.replaceChildren(node("p", "sim-muted", "Agent portraits could not be loaded."),
+          button("Retry", loadAgents));
+      }
+    }
+    loadAgents();
+    return { panel, lineups, get agents() { return agentCatalog; } };
+  }
+
+  function mountLab() {
+    const { maps, teams, agents, attackPlans, defensePlans } = SkirmishSim;
+    const names = teams.map(({ name }) => name);
+    const setup = node("form", "skirmish-setup");
+    const controls = node("div", "sim-panel skirmish-controls");
+    const settings = node("div", "skirmish-settings");
+    const labelControl = (text, control) => {
+      const label = node("label", "", text);
+      label.append(control);
+      return label;
+    };
+    const seedInput = node("input");
+    seedInput.type = "number";
+    seedInput.min = "1";
+    seedInput.max = "4294967295";
+    seedInput.required = true;
+    const randomizeSeed = () => { seedInput.value = String(crypto.getRandomValues(new Uint32Array(1))[0] || 1); };
+    randomizeSeed();
+    const start = node("button", "sim-button sim-primary skirmish-launch", "Simulate map");
+    start.type = "submit";
+    start.prepend(controlIcon(playIcon));
+    const agentDraft = labDraft(names, start);
+    const seedHint = node("small", "sim-muted skirmish-seed-hint", "Keep the same seed and setup to reproduce a match.");
+    seedHint.id = "skirmish-seed-hint";
+    seedInput.setAttribute("aria-describedby", seedHint.id);
+    const seedGroup = node("div", "skirmish-seed-group");
+    const seedButton = button("New seed", randomizeSeed, "sim-button", restartIcon);
+    seedGroup.append(labelControl("Replay seed", seedInput), seedButton);
+    const planSelect = (plans) => {
+      const select = node("select");
+      select.add(new Option("Vary by round", ""));
+      plans.forEach((plan) => select.add(new Option(plan)));
+      return select;
+    };
+    const mapSelect = node("select");
+    maps.forEach((name) => mapSelect.add(new Option(name)));
+    mapSelect.value = "Sunset";
+    const attackPlan = planSelect(attackPlans(mapSelect.value));
+    const defensePlan = planSelect(defensePlans);
+    settings.append(labelControl("Map", mapSelect), labelControl("Attack plan", attackPlan),
+      labelControl("Defense plan", defensePlan), seedGroup);
+    const actions = node("div", "skirmish-actions");
+    actions.append(seedHint, start);
+    controls.append(node("h2", "", "Match setup"), settings, agentDraft.panel, actions);
+    const status = node("p", "sim-muted");
+    status.setAttribute("role", "status");
+    const training = node("details", "sim-panel skirmish-training");
+    const trainingBody = node("div");
+    training.append(node("summary", "", "Model training progress"), trainingBody);
+    let loadedProgress;
+    async function getPolicies(name) {
+      const suffix = name === "Sunset" ? "" : `-${name.toLowerCase()}`;
+      const response = await fetch(`/assets/skirmish-weights${suffix}.json?v=5`, { cache: "no-store" });
+      if (!response.ok) throw new Error("The trained bot policies could not be loaded.");
+      return SkirmishPolicy.load(await response.json());
+    }
+    function showTraining(bundle) {
+      const { episodes, sweeps, counts, map, sites, tactics } = bundle.training;
+      trainingBody.replaceChildren(node("p", "",
+        `${map} ${sites.join(" + ")} · ${episodes.toLocaleString()} training rounds · ${sweeps} passes · ${bundle.id}`));
+      if (bundle.training.utility) {
+        const section = node("section", "skirmish-training-team");
+        section.append(node("h3", "", "Ability decisions"));
+        for (const [side, result] of Object.entries(bundle.training.utility.evaluation)) {
+          const shift = bundle.utilityTiming[side];
+          const pace = shift < 0 ? "earlier casts" : shift > 0 ? "later casts" : "playbook timing";
+          const priority = { "entry edge": "target the entry edge", connector: "target the site connector", nearby: "favor a nearby caster", role: "favor the assigned role", playbook: "follow the playbook order" };
+          section.append(node("p", "", [
+            side === "attack" ? "Attack" : "Defense", pace, priority[bundle.castPreference?.[side]] || priority.playbook,
+            result.heldOut.wins + "/" + result.heldOut.rounds + " test rounds won (baseline " + result.baseline.wins + ")"
+          ].join(" � ")));
+          if (result.heldOut.enemiesInScan != null) {
+            const stats = result.heldOut;
+            section.append(node("small", "sim-muted", [
+              stats.enemiesBlinded + " enemy blinds", stats.alliesBlinded + " friendly blinds",
+              stats.enemiesInScan + " enemies in recon scans", stats.blockedMovementTicks + " movement ticks denied"
+            ].join(" / ")));
+          }
+        }
+        trainingBody.append(section);
+      }
+      for (const [side, slots] of counts.entries()) {
+        const section = node("section", "skirmish-training-team");
+        section.append(node("h3", "", names[side]));
+        const updates = node("ol");
+        for (const { accepted, trials: attempts } of slots) {
+          updates.append(node("li", "", `${accepted} of ${attempts} weight changes kept`));
+        }
+        section.append(updates);
+        trainingBody.append(section);
+      }
+      function bestTactics(choices) {
+        const entries = Object.entries(choices);
+        const bestRate = Math.max(...entries.map(([, result]) => result.wins / result.rounds));
+        return entries.filter(([, result]) => result.wins / result.rounds === bestRate)
+          .map(([name, result]) => `${name} (${result.wins}/${result.rounds})`).join(", ");
+      }
+      for (const [site, results] of Object.entries(tactics)) {
+        trainingBody.append(node("p", "",
+          `Site ${site} · Attack: ${bestTactics(results.attack)} · Defense: ${bestTactics(results.defense)}`));
+      }
+      trainingBody.append(node("p", "sim-muted", "Tactics were tested on separate seeds. Results describe the simulator."));
+      loadedProgress = map;
+    }
+    async function loadProgress() {
+      const name = mapSelect.value;
+      if (!training.open || loadedProgress === name) return;
+      loadedProgress = null;
+      trainingBody.replaceChildren(node("p", "sim-muted", "Loading training results…"));
+      try {
+        const bundle = await getPolicies(name);
+        if (mapSelect.value === name) showTraining(bundle);
+      } catch (error) {
+        if (mapSelect.value === name) trainingBody.replaceChildren(node("p", "sim-muted", error.message));
+      }
+    }
+    training.addEventListener("toggle", loadProgress);
+    mapSelect.addEventListener("change", () => {
+      attackPlan.replaceChildren(...planSelect(attackPlans(mapSelect.value)).options);
+      loadProgress();
+    });
+    setup.append(controls, training, status);
+    const output = node("div", "sim-match-playback");
+    lab.replaceChildren(setup, output);
+    let active;
+    setup.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (start.disabled) return;
+      const name = mapSelect.value;
+      const lineups = agentDraft.lineups.map((lineup) => [...lineup]);
+      const inputs = [mapSelect, seedInput, seedButton, attackPlan, defensePlan, start];
+      inputs.forEach((input) => { input.disabled = true; });
+      agentDraft.panel.inert = true;
+      active?.dispose();
+      output.replaceChildren();
+      status.textContent = "Loading the map radar…";
+      try {
+        const image = new Image();
+        image.src = `/vct-images/radar/${name.toLowerCase()}.png`;
+        await image.decode();
+        const policyBundle = await getPolicies(name);
+        showTraining(policyBundle);
+        const map = await SkirmishSim.play({
+          name, terrain: ChampionsRadar.routePlanner(image, name), seed: Number(seedInput.value),
+          tactics: { attack: attackPlan.value, defense: defensePlan.value },
+          policyBundle, draft: lineups, agentCatalog: agentDraft.agents,
+          progress: (round) => { status.textContent = `Simulated round ${round}…`; },
+          yieldRound: () => pause(0),
+        });
+        function replay() {
+          active?.dispose();
+          active = ChampionsRadar.create({
+            map, teams, agents: { ...agents, ...agentDraft.agents }, order: [0, 1], node, button, addImage, controlIcon, live: false,
+            teamIdentity: (team) => node("strong", "", team.name),
+            exit: result,
+          });
+          output.replaceChildren(active.panel);
+          active.heading.focus();
+        }
+        function result() {
+          const panel = node("section", "sim-panel");
+          const [blue, red] = map.rounds;
+          const winner = blue === red ? "Draw" : `${names[blue > red ? 0 : 1]} win`;
+          panel.append(node("h2", "", `${map.name} · ${blue}–${red}`), node("p", "", winner),
+            button("Replay map", replay), button("Download simulation JSON", () => {
+              const url = URL.createObjectURL(new Blob([JSON.stringify(SkirmishSim.trainingLog(map))], { type: "application/json" }));
+              const link = node("a");
+              link.href = url;
+              link.download = `vct-${map.name.toLowerCase()}-${map.seed}.json`;
+              link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }));
+          output.replaceChildren(panel);
+          panel.querySelector("button").focus();
+        }
+        replay();
+        status.textContent = "Map ready. Use the radar controls to play, scrub, or view the result.";
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        inputs.forEach((input) => { input.disabled = false; });
+        agentDraft.panel.inert = false;
+      }
+    });
+  }
+
+  document.addEventListener("skirmish:open", openLab);
+  if (location.hash === "#skirmish") openLab();
   function enterSimulator() {
     if (!guideSeen) showGuide();
     if (catalog && run && !playing) renderRun();

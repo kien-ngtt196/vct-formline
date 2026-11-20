@@ -35,15 +35,21 @@ const ChampionsCommentary = (() => {
         Rush: vary(round, [`Straight for ${site}. ${first(names[attack])} want to force the first fight.`,
           `Quick out of the gates. The attackers are heading right to ${site}.`]),
         Default: "The attackers fan out. They’re looking for information before they commit.",
-        "Slow execute": "The attackers are taking their time. They can wait for the first wave of utility to burn out.",
+        "Slow execute": round.skirmish ? "The attackers are taking their time before committing to the entrance."
+          : "The attackers are taking their time. They can wait for the first wave of utility to burn out.",
         Fake: `Early pressure at ${round.alternate}. Watch where the spike goes.`,
         Split: `The attackers are taking two lanes. The timing of that split onto ${site} matters.`,
         "Mid to": "The pack is going through mid. The defenders need to contest it or give up the rotation.",
         Lurk: `Pressure toward ${site}, with one attacker off the main group watching the rotation.`,
+        "Group late": `The attackers are gathering near main for a coordinated hit on ${site}.`,
       }[round.plan];
       if (opening) add(.04, opening, "Analysis");
       if (round.defense === "Fight mid" || round.defense === "Take space") {
         add(.42, `${first(names[defend])} are willing to meet them early and contest that space.`, "Analysis");
+      } else if (round.defense === "Site stack") {
+        add(.42, `${first(names[defend])} have committed most of their players to ${round.defenseSite}.`, "Analysis");
+      } else if (round.defense === "Crossfire") {
+        add(.42, `${first(names[defend])} are holding the approaches from different angles.`, "Analysis");
       }
     }
 
@@ -60,6 +66,7 @@ const ChampionsCommentary = (() => {
           : round.postPlant === "Push CT" ? "The attackers are looking to take space beyond the site."
             : "The defenders need to break the post-plant crossfire.";
         add(.02, `Spike down on ${site}. ${setup}`);
+        if (simulation.ended?.reason === "defuse") add(simulation.defuse.start, "A defender starts the defuse.");
         add(.76, "Time is getting tight for the retake. The defenders need a clean fight.", "Analysis");
       } else {
         add(.03, simulation && round.planted
@@ -116,9 +123,15 @@ const ChampionsCommentary = (() => {
       const winner = first(names[round.winner]);
       const score = `${round.score[round.winner]}–${round.score[1 - round.winner]}`;
       let outcome;
-      if (simulation?.planted && ["defuse", "detonate", "hold"].includes(round.finish)) {
-        outcome = round.finish === "defuse" ? `The retake is complete. ${winner} get the defuse.`
-          : round.finish === "detonate" ? `The spike goes off. ${winner} take the round.`
+      if (simulation?.ended?.reason === "defuse") {
+        outcome = `The retake is complete. ${winner} get the defuse.`;
+      } else if (simulation?.ended?.reason === "elimination") {
+        outcome = `${winner} eliminate the last opponent and take the round.`;
+      } else if (simulation?.ended?.reason === "time") {
+        outcome = `Time expires before the plant. ${winner} take the round.`;
+      } else if (simulation?.planted && ["detonate", "hold"].includes(round.finish)) {
+        outcome = round.finish === "detonate"
+          ? `The spike goes off. ${winner} take the round.`
             : `${winner} hold the post-plant.`;
       } else if (round.finish === "save" && (!round.planted || simulation?.planted)) {
         outcome = `${first(names[1 - round.winner])} save what they can. The round goes to ${winner}.`;

@@ -1,7 +1,8 @@
 const ChampionsAbilityGeometry = (() => {
   // VALORANT-API map multipliers, converted from world centimeters to radar percent per meter.
   const metersToRadar = {
-    Abyss: .81, Ascent: .70, Haven: .75, Lotus: .72, Split: .78, Summit: .75, Sunset: .78,
+    Abyss: .81, Ascent: .70, Bind: .59, Breeze: .70, Corrode: .70, Fracture: .78,
+    Haven: .75, Icebox: .72, Lotus: .72, Pearl: .78, Split: .78, Summit: .75, Sunset: .78,
   };
   const colors = {
     astra: "#b86cec", breach: "#ef9b54", brimstone: "#d8a47a", chamber: "#e9c47f",

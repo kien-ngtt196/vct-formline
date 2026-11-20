@@ -10,18 +10,20 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/app.css?v=64">
-    <link rel="stylesheet" href="/simulator.css?v=19">
-    <script src="/app.js?v=64" defer></script>
-    <script src="/simulator-tactics.js?v=6" defer></script>
+    <link rel="stylesheet" href="/simulator.css?v=30">
+    <script src="/app.js?v=65" defer></script>
+    <script src="/simulator-tactics.js?v=12" defer></script>
     <script src="/assets/simulator-ability-catalog.js?v=1" defer></script>
-    <script src="/assets/simulator-ability-geometry.js?v=4" defer></script>
-    <script src="/assets/simulator-smokes.js?v=3" defer></script>
-    <script src="/assets/simulator-movement.js?v=4" defer></script>
-    <script src="/assets/simulator-utility.js?v=9" defer></script>
-    <script src="/assets/simulator-commentary.js?v=3" defer></script>
-    <script src="/simulator-engine.js?v=3" defer></script>
-    <script src="/simulator-radar.js?v=18" defer></script>
-    <script src="/simulator.js?v=9" defer></script>
+    <script src="/assets/simulator-ability-geometry.js?v=5" defer></script>
+    <script src="/assets/simulator-smokes.js?v=7" defer></script>
+    <script src="/assets/skirmish-policy.js?v=3" defer></script>
+    <script src="/assets/simulator-movement.js?v=15" defer></script>
+    <script src="/assets/simulator-utility.js?v=14" defer></script>
+    <script src="/assets/simulator-commentary.js?v=7" defer></script>
+    <script src="/simulator-engine.js?v=4" defer></script>
+    <script src="/simulator-radar.js?v=31" defer></script>
+    <script src="/assets/simulator-skirmish.js?v=12" defer></script>
+    <script src="/simulator.js?v=22" defer></script>
   </head>
   <body>
     <header class="site-header">
@@ -36,6 +38,9 @@
         <a href="#archive" data-view-target="archive">Tournament archive</a>
         <a href="#watchlist" data-view-target="watchlist">2027 roadmap</a>
         <a href="#simulator" data-view-target="simulator">Champions simulator <span class="nav-beta" title="Still in development">Beta</span></a>
+        <!-- LOCAL LAB START -->
+        <a href="#skirmish" data-view-target="skirmish">5v5 Lab</a>
+        <!-- LOCAL LAB END -->
       </nav>
       <div class="header-actions">
         <span class="header-note">INDEPENDENT VCT STATS</span>
@@ -411,6 +416,20 @@
           <a href="https://valorantesports.com/en-US/season/115571062868511862/handbook/115571073559465084" target="_blank" rel="noopener noreferrer">Champions Shanghai format ↗</a>
         </p>
       </section>
+
+      <!-- LOCAL LAB START -->
+      <section class="page-view feature-view sim-page" data-page-panel="skirmish" hidden>
+        <header class="sim-hero">
+          <div>
+            <p class="eyebrow">VCT FORMLINE · 5v5 LAB</p>
+            <h1>Tactical Lab</h1>
+            <p>Test attack and defense plans across thirteen maps. Draft two agent lineups and watch their utility, rotations, and retakes on the radar.</p>
+          </div>
+          <a class="sim-button" href="#simulator" data-view-target="simulator">Champions Simulator ↗</a>
+        </header>
+        <div id="skirmish-workspace"></div>
+      </section>
+      <!-- LOCAL LAB END -->
 
       <footer class="site-footer">
         <span><strong>VCT Formline</strong> · Independent VALORANT esports stats · Unaffiliated with Riot Games</span>

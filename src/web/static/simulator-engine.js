@@ -120,34 +120,18 @@ const ChampionsSim = (() => {
       });
     };
     assign([], 0, 0);
-    return { agents: best, fit: bestFit };
-  }
-
-  function roundsFor(chance, random) {
-    const rounds = [0, 0];
-    const winners = [];
-    while (Math.max(...rounds) < 13 || (winners.length > 24 && Math.abs(rounds[0] - rounds[1]) < 2)) {
-      const winner = random() < chance ? 0 : 1;
-      winners.push(winner);
-      rounds[winner]++;
-      if (rounds[0] === 30 && rounds[1] === 30) {
-        const tiebreak = random() < chance ? 0 : 1;
-        winners.push(tiebreak, tiebreak);
-        break;
-      }
-    }
-    return winners;
+    return best;
   }
 
   function statLines(teams, picks, timeline) {
     const stats = teams.map((team, side) => team.roster.map((player, index) => ({
-      player, team: team.id, agent: picks[side].agents[index], kills: 0, deaths: 0, assists: 0,
+      player, team: team.id, agent: picks[side][index], kills: 0, deaths: 0, assists: 0,
     })));
     for (const { kills } of timeline) {
       for (const { side, killer, victim, assist } of kills) {
         stats[side][killer].kills++;
         stats[1 - side][victim].deaths++;
-        if (assist !== null) stats[side][assist].assists++;
+        if (assist != null) stats[side][assist].assists++;
       }
     }
     const rounds = timeline.length;
@@ -159,7 +143,7 @@ const ChampionsSim = (() => {
     return stats;
   }
 
-  function play(catalog, run, match, random = Math.random) {
+  async function playTactical(catalog, run, match, simulate, random = Math.random) {
     const sides = sidesFor(run, match);
     if (sides.some((side) => !side) || run.results[match.id]) throw new Error("This match is unavailable.");
     const teams = sides.map((id) => run.teams[id]);
@@ -168,33 +152,32 @@ const ChampionsSim = (() => {
     const score = [0, 0];
     for (const name of order) {
       const picks = teams.map((team) => composition(catalog, name, team.roster, random));
-      const power = teams.map((team, index) =>
-        sum(team.roster.map((player) => player.skill)) / 5 + picks[index].fit * 0.0007);
-      const chance = clamp(0.5 + (power[0] - power[1]) * 0.63 + (random() - 0.5) * 0.13, 0.28, 0.72);
-      const timeline = ChampionsTactics.playMap(name, roundsFor(chance, random), teams, random);
-      const rounds = timeline.at(-1).score;
-      const won = rounds[0] > rounds[1] ? 0 : 1;
+      const setup = { name, draft: picks, seed: 1 + Math.floor(random() * 4294967295) };
+      const map = await simulate(setup, teams);
+      const won = Number(map.rounds[1] > map.rounds[0]);
       score[won]++;
-      const stats = statLines(teams, picks, timeline);
-      const highlights = timeline.filter((round) => ["clutch", "defuse", "save"].includes(round.finish));
-      const scenes = match.id === "GF" ? highlights.slice(-3).map((round) =>
-        `Round ${round.number} Â· ${round.notes.at(-1)}`) : [];
-      maps.push({ name, rounds, stats, scenes, timeline });
+      const stats = statLines(teams, picks, map.timeline);
+      const scenes = match.id === "GF" ? (map.replays || []).flatMap((round, index) => {
+        if (round.ended.reason !== "defuse") return [];
+        return [`Round ${index + 1} · ${teams[round.ended.winner].name} defuses the Spike`];
+      }).slice(-3) : [];
+      maps.push({ ...map, stats, setup, scenes });
       if (score[won] > match.bestOf / 2) break;
     }
-    const win = score[0] > score[1] ? 0 : 1;
+    const win = Number(score[1] > score[0]);
     return { sides, score, maps, order, winner: sides[win], loser: sides[1 - win] };
   }
 
-  function advance(catalog, run, random = Math.random) {
+  async function advanceTactical(catalog, run, simulate) {
     const groups = run.groups.flatMap((group) => group.fixtures);
     while (!run.results.GF) {
       const phase = groups.every((match) => run.results[match.id]) ? run.playoffs : groups;
       const ready = phase.filter((match) => !run.results[match.id] && sidesFor(run, match).every(Boolean));
-      const automatic = ready.find((match) => !sidesFor(run, match).includes(userId));
-      if (automatic) run.results[automatic.id] = play(catalog, run, automatic, random);
-      else if (ready.length) return ready[0];
-      else throw new Error("The next tournament fixture could not be resolved.");
+      if (!ready.length) throw new Error("The next tournament fixture could not be resolved.");
+      const userMatch = ready.find((match) => sidesFor(run, match).includes(userId));
+      if (userMatch) return userMatch;
+      const [automatic] = ready;
+      run.results[automatic.id] = await playTactical(catalog, run, automatic, simulate);
     }
     return null;
   }
@@ -222,5 +205,5 @@ const ChampionsSim = (() => {
     })).sort((a, b) => b.rating - a.rating || b.acs - a.acs || b.maps - a.maps);
   }
 
-  return { roles, userId, offers, create, sidesFor, play, advance, standings };
+  return { roles, userId, offers, create, sidesFor, playTactical, advanceTactical, standings };
 })();

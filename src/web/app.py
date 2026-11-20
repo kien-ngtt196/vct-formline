@@ -1,6 +1,7 @@
 import json
 import logging
 import mimetypes
+import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -1364,11 +1365,16 @@ def static_response(relative_path, base_directory=STATIC_DIR):
 def get_response(path, query):
     try:
         if path == "/":
-            return static_response("index.html")
+            status, body, content_type = static_response("index.html")
+            if os.environ.get("VERCEL") == "1":
+                body = re.sub(rb"<!-- LOCAL LAB START -->.*?<!-- LOCAL LAB END -->", b"", body, flags=re.S)
+            return status, body, content_type
         elif path in {"/app.css", "/app.js", "/simulator.css", "/simulator-engine.js", "/simulator.js",
                       "/simulator-tactics.js", "/simulator-radar.js",
                       "/favicon.svg", "/champions-mark.svg"} or path.startswith("/assets/"):
             return static_response(path.lstrip("/"))
+        elif path == "/vct-images/agents/catalog.json":
+            return static_response("agents/catalog.json", VCT_IMAGE_DIR)
         elif path.startswith("/vct-images/"):
             image_path = path.removeprefix("/vct-images/")
             if Path(image_path).suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:

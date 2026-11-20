@@ -21,7 +21,7 @@ const ChampionsSmokes = (() => {
     },
     Haven: {
       // https://dotesports.com/valorant/news/best-smoke-spots-for-every-map-in-valorant
-      mid: [s("B entrance from Mid", 47, 54, 43, 52), s("Mid Window", 68, 49, 73, 48)],
+      mid: [s("B entrance from Mid", 47, 54, 43, 52), s("Mid Window", 67, 47, 71, 45)],
       A: {
         cuts: [s("A Heaven window", 34, 15, 30, 13), s("A defender entrance", 29, 25, 27, 31)],
         entry: s("A Long exit", 46, 17, 56, 17), secondary: s("A Short exit", 47, 27, 49, 34),
@@ -29,7 +29,7 @@ const ChampionsSmokes = (() => {
         cross: s("A default crossing", 41, 20, 38, 19),
       },
       B: {
-        cuts: [s("A Link to B", 34, 42, 32, 36), s("C Link to B", 34, 58, 33, 64)],
+        cuts: [s("A Link to B", 35.5, 43, 33, 41), s("C Link to B", 34, 58, 33, 64)],
         entry: s("B entrance from Mid", 47, 54, 55, 53),
       },
       C: {
@@ -43,13 +43,13 @@ const ChampionsSmokes = (() => {
       mid: [s("Mid Mail", 48, 59, 46, 65), s("Mid Bottom", 59, 54, 68, 54)],
       midBySite: { B: s("Mid Vent toward A", 45, 48, 43, 44) },
       A: {
-        cuts: [s("A Screens exit", 23, 25, 18, 27), s("A Heaven drop", 35, 26, 33, 33)],
+        cuts: [s("A Screens exit", 21, 25, 15, 24), s("A Heaven drop", 35, 26, 38, 24)],
         split: [0], entry: s("A Main exit", 43, 20, 50, 20), secondary: s("A Ramps", 45, 31, 47, 38),
         cross: s("A site crossing", 34, 19, 30, 16),
       },
       B: {
         cuts: [s("B Heaven drop", 39, 75, 41, 70), s("B CT Alley", 24, 78, 20, 74)],
-        split: [1], entry: s("B Garage exit", 44, 86, 51, 87), cross: s("B pillar crossing", 38, 86, 35, 88),
+        split: [1], entry: s("B Garage exit", 44, 86, 47, 91), cross: s("B pillar crossing", 38, 86, 35, 88),
       },
     },
     Lotus: {
@@ -85,7 +85,7 @@ const ChampionsSmokes = (() => {
       },
       B: {
         cuts: [s("B Market entrance", 24, 39, 28, 43), s("B Boba exit", 15, 31, 15, 27)],
-        split: [1], entry: s("B Main exit", 13, 49, 12, 55), cross: s("B pillar crossing", 17, 43, 15, 42),
+        split: [1], entry: s("B Main exit", 13, 49, 12, 55), cross: s("B pillar crossing", 17, 43, 20, 44),
       },
     },
     Abyss: {
@@ -93,27 +93,59 @@ const ChampionsSmokes = (() => {
       mid: [s("Mid Top stairs", 38, 44, 33, 44), s("Mid Bottom entrance", 57, 51, 62, 52)],
       A: {
         cuts: [s("A Tower window", 47, 23, 49, 26), s("A Security entrance", 31, 14, 27, 12)],
-        entry: s("A Main exit", 56, 18, 63, 19), cross: s("A bridge crossing", 47, 12, 46, 9),
+        entry: s("A Main exit", 56, 18, 63, 19), cross: s("A bridge crossing", 47, 12, 44, 14),
       },
       B: {
-        cuts: [s("B Tower window", 34, 84, 30, 82), s("B Link entrance", 35, 76, 33, 70)],
+        cuts: [s("B Tower window", 34, 84, 30, 82), s("B Link entrance", 29, 75, 29, 69)],
         split: [0], entry: s("B Main exit", 54, 86, 60, 87), cross: s("B site crossing", 46, 87, 42, 90),
       },
     },
     Summit: {
-      // https://www.youtube.com/watch?v=sBzFzQG73Wk
-      mid: [s("Mid Window", 49, 35, 49, 31), s("Mid Tiles exit", 39, 63, 36, 67)],
+      // Summit creator demonstrations: https://road2radiant.pro/en/guides/maps/summit
+      // B Tower, Trophy/Link and Main lips measured against the supplied radar.
+      mid: [s("Mid Window", 49, 35, 49, 31), s("Mid Tiles exit", 39, 62, 36, 62)],
       A: {
-        cuts: [s("A Art exit", 81, 29, 79, 25), s("A Cave exit", 92, 33, 95, 28), s("A Link exit", 74, 37, 67, 37)],
-        split: [0, 1], entry: s("A Main exit", 78, 51, 72, 57),
-        cross: s("A Garden crossing", 83, 42, 87, 42),
+        cuts: [s("A Art exit", 81, 29, 79, 25), s("A Cave exit", 92, 33, 95, 28), s("A Link exit", 74, 35, 76, 32)],
+        split: [0, 1], entry: s("A Main exit", 82.5, 49.5, 82.5, 56),
+        cross: s("A Garden crossing", 84, 43.5, 88, 46),
       },
       B: {
-        cuts: [s("B Tower exit", 14, 27, 15, 22), s("B Link exit", 24, 39, 29, 41)],
-        split: [0], entry: s("B Main exit", 18, 43, 20, 49), cross: s("B site crossing", 15, 38, 12, 35),
+        cuts: [s("B Tower exit", 18.4, 28.8, 16.2, 33.1, 3.5),
+          s("B Trophy / Link", 23.8, 39.5, 26, 42.3, 4),
+          s("B Gym exit", 16.2, 24.7, 16.2, 21.5, 3.5)],
+        split: [0, 2], entry: s("B Main exit", 25.8, 53.4, 25.8, 59, 4.5),
+        cross: s("B site crossing", 15, 38, 12, 35),
       },
     },
   };
+
+  // These radar waypoints approximate ground-level sightlines at each entrance.
+  // Split groups keep their connector open. Bind uses lobby control instead of mid.
+  const laneNames = {
+    Bind: [["A Heaven", "A Lamps", "A approach"], ["B Halls", "B Elbow", "B approach"]],
+    Breeze: [["A Bridge", "A Doors", "A Main"], ["B Arches", "B Tunnel", "B Main"]],
+    Corrode: [["A defender entrance", "A Link", "A Main"], ["B Tower", "B Link", "B Main"]],
+    Fracture: [["A defender entrance", "A Rope", "A Main"], ["B Generator", "B Canteen", "B Main"]],
+    Icebox: [["A Screens", "A Rafters", "A approach"], ["B Snowman", "B Orange", "B approach"]],
+    Pearl: [["A Secret", "A Link", "A Main"], ["B Hall", "B Link", "B Main"]],
+  };
+  for (const [map, names] of Object.entries(laneNames)) {
+    const profile = {};
+    for (const [index, site] of ["A", "B"].entries()) {
+      const lane = ChampionsTactics.lanesFor(map, site);
+      const doorway = (name, point) => s(name, ...point,
+        ...point.map((v, axis) => v + (v - lane.target[axis])));
+      const [back, link, main] = names[index];
+      profile[site] = { cuts: [doorway(back, lane.back), doorway(link, lane.link)],
+        split: [0], entry: doorway(main, lane.main) };
+    }
+    const layout = ChampionsTactics.layouts[map];
+    const midCut = (name, toward) => s(name, ...layout.mid, ...toward);
+    profile.mid = map === "Bind" || map === "Fracture"
+      ? [profile.A.cuts[1], profile.B.entry]
+      : [midCut("Mid defender approach", layout.defense), midCut("Mid attacker approach", layout.attack)];
+    maps[map] = profile;
+  }
 
   const seconds = {
     "Dark Cover": 15, "Sky Smoke": 19.25, Nebula: 14.25, Ruse: 14, Cove: 19.25,
@@ -155,7 +187,7 @@ const ChampionsSmokes = (() => {
     // Check the artwork, but NEVER move a precision smoke to the integer movement
     // grid: that changes its depth and can put its edge back on the friendly side.
     const snapped = terrain.snap(point);
-    if (!snapped || Math.hypot(snapped[0] - point[0], snapped[1] - point[1]) > footprint.radius) return null;
+    if (!snapped || Math.hypot(snapped[0] - point[0], snapped[1] - point[1]) > 1.5 * scale) return null;
     return point;
   }
 
@@ -174,22 +206,30 @@ const ChampionsSmokes = (() => {
     const site = profile[round.site];
     const alternate = profile[round.alternate];
     const mask = site.split && ["Split", "Mid to"].includes(round.plan) ? site.split : site.cuts.map((_, i) => i);
+    const settings = round.skirmish?.smokePolicy?.[round.site];
+    const attackKey = round.plan === "Fake" ? "fake" : ["Split", "Mid to"].includes(round.plan) ? "split" : "execute";
+    const attackStyle = settings?.[attackKey];
+    const defenseStyle = settings?.defense;
     const cuts = mask.map((index) => site.cuts[index]);
+    if (attackStyle === "alternate") cuts.reverse();
     const mid = ["Split", "Mid to"].includes(round.plan);
     const fast = round.plan === "Rush";
     const slow = ["Default", "Slow execute", "Lurk"].includes(round.plan);
-    const executeAt = fast ? .12 : .25;
+    const executeAt = attackStyle === "early" ? .06 : fast ? .12 : .25;
     const reserve = Math.min(cuts.length, 2);
     const neededBy = now(round, 2, executeAt);
     if (context === "opening") {
       return [
-        ...(round.plan === "Fake" ? [{ attack: true, time: .10, spot: alternate.cuts[0],
+        ...(round.skirmish && fast && site.control ? [{ attack: true, time: round.skirmish.smokeAt ?? .10,
+          spot: site.control, use: "screens the opening cross", reserve, neededBy }] : []),
+        ...(round.plan === "Fake" && attackStyle !== "alternate" ? [{ attack: true, time: attackStyle === "early" ? .05 : .10, spot: alternate.cuts[0],
           use: `sells the ${round.alternate} fake while preserving the real hit`, reserve, neededBy }] : []),
-        ...(slow ? [{ attack: true, time: .10, spot: site.control || profile.midBySite?.[round.site] || profile.mid[0],
+        ...(slow ? [{ attack: true, time: round.skirmish?.smokeAt ?? .10,
+          spot: site.control || profile.midBySite?.[round.site] || profile.mid[0],
           use: "denies early information and supports the default", reserve, neededBy }] : []),
-        ...(mid ? [{ attack: true, time: .23, spot: profile.midBySite?.[round.site] || profile.mid[0],
+        ...(mid && attackStyle !== "alternate" ? [{ attack: true, time: .23, spot: profile.midBySite?.[round.site] || profile.mid[0],
           use: "cuts the mid sightline without smoking the connector group", reserve, neededBy }] : []),
-        ...(round.defense === "Fight mid"
+        ...(defenseStyle === "alternate" ? [] : round.defense === "Fight mid"
           ? [{ attack: false, time: .19, spot: profile.mid[1], use: "covers a mid contest", pressure: true }]
           : round.defense === "Take space" && site.push
             ? [{ attack: false, time: .23, spot: site.push, use: "covers the defenders' push", pressure: true }]
@@ -203,7 +243,7 @@ const ChampionsSmokes = (() => {
           use: fast ? "seals the rotation before the rush" : "cuts a defender sightline for the committed hit" })),
         { attack: true, time: executeAt, spot: { ...(site.cross || cuts[0]), wall: true }, use: "screens the site crossing", wall: true },
         ...(site.cross ? [{ attack: true, time: .50, spot: site.cross, use: "covers the entry player", entry: true }] : []),
-        { attack: false, time: fast ? .10 : .29, spot: site.entry, use: "blocks the attackers' choke", pressure: true },
+        { attack: false, time: defenseStyle === "early" ? .05 : fast ? .10 : .29, spot: defenseStyle === "alternate" ? (site.secondary || site.entry) : site.entry, use: "blocks the attackers' choke", pressure: true },
         ...(round.defense === "Delay" && site.secondary
           ? [{ attack: false, time: .42, spot: site.secondary, use: "cuts the second entry", pressure: true }] : []),
       ];
@@ -215,9 +255,9 @@ const ChampionsSmokes = (() => {
       // A flanker needs the main sightline open. An open plant instead calls for
       // cover ON the spike so the retakers can still fight the players in main.
       ...(!defuseCover && round.defense !== "Flank"
-        ? [{ attack: false, time: round.retake === "Flood" ? .12 : .24, spot: site.entry,
+        ? [{ attack: false, time: settings?.retake === "early" ? .05 : round.retake === "Flood" ? .12 : .24, spot: site.entry,
           use: "isolates main for the retake", pressure: true }] : []),
-      ...(defuseCover ? [{ attack: false, time: .52, spot: { name: "Spike defuse cover", lip: plant, centered: true },
+      ...(defuseCover ? [{ attack: false, time: settings?.retake === "early" ? .30 : .52, spot: { name: "Spike defuse cover", lip: plant, centered: true },
         use: "covers the defuse while teammates watch the spam" }] : []),
       // Do not smoke off our own CT push; retain sightlines to that teammate.
       ...(round.postPlant !== "Push CT"

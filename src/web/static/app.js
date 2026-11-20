@@ -116,6 +116,7 @@ function showPage(view, scroll = true) {
   if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
   if (view === "archive") loadArchive();
   if (view === "simulator") document.dispatchEvent(new Event("simulator:open"));
+  if (view === "skirmish") document.dispatchEvent(new Event("skirmish:open"));
 }
 
 function setupHomeVideo() {
