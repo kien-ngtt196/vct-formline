@@ -58,7 +58,7 @@ const ChampionsRadar = (() => {
     const orient = ([x, y]) => rotation === 1 ? [100 - y, x] : rotation === -1 ? [y, 100 - x] : [x, y];
     const placeOnMap = (element, point) => position(element, orient(point));
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const labHud = Boolean(map.replays && map.stats[0][0].team === "blue");
+    const labHud = Boolean(map.replays);
     const panel = node("section", labHud ? "sim-radar lab-playback" : "sim-radar");
     const heading = node("h3", "", `${map.name} tactical playback`);
     heading.tabIndex = -1;
@@ -94,12 +94,13 @@ const ChampionsRadar = (() => {
       rosterRows[side] = map.stats[side].map(({ player, agent }, index) => {
         const entry = agents[map.draft?.[side]?.[index] || agent];
         const row = node("div", "lab-roster-player");
-        if (entry.image) addImage(row, entry.image, "lab-roster-portrait", "");
+        if (entry.image) addImage(row, entry.image, "lab-roster-portrait", entry.name);
         const info = node("div", "lab-roster-info");
         const equipment = label("", "lab-roster-equipment");
         const kit = node("div", "lab-roster-kit");
         const state = label("", "lab-roster-state");
-        info.append(node("strong", "", entry.image ? entry.name : player.name), equipment, kit, state);
+        const name = map.setup ? player.name : entry.image ? entry.name : player.name;
+        info.append(node("strong", "", name), equipment, kit, state);
         row.append(info);
         roster.append(row);
         return { row, equipment, kit, state };
@@ -491,7 +492,7 @@ const ChampionsRadar = (() => {
         context.setLineDash([4, 3]);
         const { attack, defense } = planner.buyBarriers || ChampionsTactics.buyBarriers[map.name];
         for (const [side, segments] of [[roundState.round.attack, attack], [1 - roundState.round.attack, defense]]) {
-          context.strokeStyle = colors[map.replays ? Number(side === roundState.round.attack) : order.indexOf(side)];
+          context.strokeStyle = colors[map.setup || !map.replays ? order.indexOf(side) : Number(side === roundState.round.attack)];
           for (const [x1, y1, x2, y2] of segments) {
             context.beginPath();
             context.moveTo(x1 * 4, y1 * 4);
